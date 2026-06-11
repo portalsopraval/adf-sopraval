@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Portal ADF · Análisis de Falla · Sopraval</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<div id="app">
+
+  <!-- ═══════════════ LOGIN ═══════════════ -->
+  <div id="screen-login" class="screen active">
+    <div class="auth-bg">
+      <div class="auth-card">
+        <div class="login-form-side">
+          <div class="auth-logo">
+            <div class="brand">SOPRAVAL · Agrosuper</div>
+            <div class="logo-sub">Portal de Análisis de Falla (ADF)</div>
+          </div>
+          <div class="login-orange-bar"></div>
+          <form id="form-login">
+            <div class="field">
+              <label>Correo electrónico</label>
+              <input type="text" id="login-email" placeholder="usuario@sopraval.cl" autocomplete="username" />
+            </div>
+            <div class="field">
+              <label>Contraseña</label>
+              <input type="password" id="login-pass" placeholder="••••••••" autocomplete="current-password" />
+            </div>
+            <p id="login-error" class="error-msg"></p>
+            <button type="submit" class="btn-primary full">Ingresar al sistema</button>
+          </form>
+          <div class="auth-footer">Planta Industrial Sopraval · Sistema Integrado de Gestión (SIGAS)</div>
+        </div>
+        <div class="login-img-side">
+          <div class="login-img-content">
+            <div class="big-icon">🔧</div>
+            <h2>Análisis de Falla</h2>
+            <p>Ingresa la falla observada<br>y el sistema propone el análisis<br>de causa raíz automáticamente.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════ APP ═══════════════ -->
+  <div id="screen-app" class="screen">
+    <div class="topbar">
+      <div class="brand-wrap">
+        <div class="brand-mark">ADF Sopraval<small>ANÁLISIS DE FALLA · SIGAS</small></div>
+      </div>
+      <div class="topbar-right">
+        <div class="user-chip">
+          <div class="avatar" id="nav-avatar">--</div>
+          <div class="u-meta"><b id="nav-name">Usuario</b><span id="nav-role">rol</span></div>
+        </div>
+        <button class="logout-btn" id="btn-logout">Salir</button>
+      </div>
+    </div>
+
+    <nav class="tabs-nav" id="tabs-nav"></nav>
+
+    <div class="content">
+      <!-- INICIO / DASHBOARD -->
+      <div class="tab-pane" id="pane-inicio"></div>
+      <!-- LISTADO ADF -->
+      <div class="tab-pane" id="pane-listado"></div>
+      <!-- NUEVO ADF -->
+      <div class="tab-pane" id="pane-nuevo"></div>
+      <!-- SEGUIMIENTO -->
+      <div class="tab-pane" id="pane-seguimiento"></div>
+      <!-- CONTROL DE TIEMPOS -->
+      <div class="tab-pane" id="pane-tiempos"></div>
+      <!-- PLANES DE MANTENIMIENTO PREVENTIVO (líderes) -->
+      <div class="tab-pane" id="pane-mantenimiento"></div>
+      <!-- CATÁLOGO (líderes) -->
+      <div class="tab-pane" id="pane-catalogo"></div>
+      <!-- USUARIOS (líderes) -->
+      <div class="tab-pane" id="pane-usuarios"></div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ═══ MODAL DETALLE / INFORME ═══ -->
+<div class="modal-overlay" id="modal-detalle">
+  <div class="modal-box">
+    <div class="modal-head">
+      <h3 id="modal-title">ADF</h3>
+      <button class="close-x" id="modal-close">&times;</button>
+    </div>
+    <div class="modal-body" id="modal-body"></div>
+  </div>
+</div>
+
+<div class="toast-wrap" id="toast-wrap"></div>
+
+<!-- Firebase compat SDK -->
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

@@ -369,3 +369,18 @@ tr.row-done td:last-child { opacity:1; }
   transition: background .15s, border-color .15s, color .15s;
 }
 .maq-clear-btn:hover { background: var(--red-lt); border-color: #fca5a5; color: var(--red); }
+
+/* ── Confiabilidad ── */
+.conf-nota {
+  background: var(--blue-lt);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--blue);
+  border-radius: var(--radius-sm);
+  padding: 11px 15px;
+  font-size: .82rem;
+  color: var(--gray-dk);
+  margin: 4px 0 20px;
+  line-height: 1.55;
+}
+.kpi .k-lbl small { font-weight: 400; color: var(--gray); font-size: .72rem; }
+table.data code { font-family: monospace; font-size: .82rem; color: var(--blue); }

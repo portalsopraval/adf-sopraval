@@ -521,8 +521,8 @@ async function cargarUsuarios(){
    ARRANQUE APP
    ═══════════════════════════════════════════════════════════ */
 const TABS = {
-  tecnico: [['inicio','🏠 Inicio'],['nuevo','➕ Nuevo ADF'],['listado','📋 Mis ADF'],['seguimiento','📌 Seguimiento'],['tiempos','⏱ Control de Tiempos']],
-  lider:   [['inicio','🏠 Inicio'],['nuevo','➕ Nuevo ADF'],['listado','📋 Todos los ADF'],['seguimiento','📌 Seguimiento'],['tiempos','⏱ Control de Tiempos'],['mantenimiento','🔧 Planes PM'],['catalogo','📚 Catálogo'],['usuarios','👥 Usuarios']],
+  tecnico: [['inicio','🏠 Inicio'],['nuevo','➕ Nuevo ADF'],['listado','📋 Mis ADF'],['seguimiento','📌 Seguimiento'],['tiempos','⏱ Control de Tiempos'],['confiabilidad','📊 Confiabilidad']],
+  lider:   [['inicio','🏠 Inicio'],['nuevo','➕ Nuevo ADF'],['listado','📋 Todos los ADF'],['seguimiento','📌 Seguimiento'],['tiempos','⏱ Control de Tiempos'],['confiabilidad','📊 Confiabilidad'],['mantenimiento','🔧 Planes PM'],['catalogo','📚 Catálogo'],['usuarios','👥 Usuarios']],
 };
 
 function arrancarApp(){
@@ -554,6 +554,7 @@ function irTab(tab){
   if(tab==='nuevo') renderNuevo();
   if(tab==='seguimiento') renderSeguimiento();
   if(tab==='tiempos') renderTiempos();
+  if(tab==='confiabilidad') renderConfiabilidad();
   if(tab==='mantenimiento') renderMantenimiento();
   if(tab==='catalogo') renderCatalogo();
   if(tab==='usuarios') renderUsuarios();
@@ -564,7 +565,7 @@ function escucharADFs(){
   fdb.collection(COL_ADF).onSnapshot(snap=>{
     _cache.adfs = snap.docs.map(d=>({ id:d.id, ...d.data() }))
       .sort((a,b)=> (b.createdAt||'').localeCompare(a.createdAt||''));
-    if(['inicio','listado','seguimiento','tiempos'].includes(_activeTab)) irTab(_activeTab);
+    if(['inicio','listado','seguimiento','tiempos','confiabilidad'].includes(_activeTab)) irTab(_activeTab);
   });
 }
 
@@ -1094,6 +1095,131 @@ async function concluirPlan(adfId, planIdx, checked){
     updatedAt:new Date().toISOString(),
   });
   toast(checked?'Plan marcado como concluido.':'Plan desmarcado.','ok');
+}
+
+/* ═══════════════════════════════════════════════════════════
+   CONFIABILIDAD · MTTR / MTBF / DISPONIBILIDAD
+   ═══════════════════════════════════════════════════════════ */
+// Convierte fecha (YYYY-MM-DD) + hora (HH:MM) a milisegundos
+function fechaHoraMs(fecha, hora){
+  if(!fecha) return null;
+  const h = (hora && /^\d{1,2}:\d{2}/.test(hora)) ? hora : '00:00';
+  const d = new Date(fecha + 'T' + h + ':00');
+  return isNaN(d.getTime()) ? null : d.getTime();
+}
+// Tiempo de reparación de una falla, en horas (null si faltan datos)
+function downtimeHoras(a){
+  const ini = fechaHoraMs(a.fechaInicio, a.horaInicio);
+  const fin = fechaHoraMs(a.fechaMarcha, a.horaMarcha);
+  if(ini==null || fin==null || fin<=ini) return null;
+  return (fin - ini) / 3600000;
+}
+// Formatea una duración en horas a texto legible
+function fmtDur(h){
+  if(h==null || isNaN(h)) return '—';
+  if(h < 1)  return Math.round(h*60) + ' min';
+  if(h < 48) return (Math.round(h*10)/10) + ' h';
+  return (Math.round(h/24*10)/10) + ' días';
+}
+
+// Calcula métricas por equipo (agrupa por SAP; si no hay, por nombre)
+function calcConfiabilidad(list){
+  const grupos = {};
+  for(const a of list){
+    const key = a.codSap || a.equipo || '—';
+    if(!grupos[key]) grupos[key] = { sap:a.codSap||'', equipo:a.equipo||'—', area:a.area||'—', fallas:[] };
+    grupos[key].fallas.push({
+      dt:  downtimeHoras(a),
+      ini: fechaHoraMs(a.fechaInicio, a.horaInicio),
+      fin: fechaHoraMs(a.fechaMarcha, a.horaMarcha),
+    });
+  }
+  const equipos = [];
+  for(const k in grupos){
+    const g = grupos[k];
+    const dts = g.fallas.map(f=>f.dt).filter(v=>v!=null);
+    const mttr = dts.length ? dts.reduce((s,v)=>s+v,0)/dts.length : null;
+    const horasDetenido = dts.reduce((s,v)=>s+v,0);
+
+    // MTBF: tiempo operativo entre fallas consecutivas (requiere ≥2 fallas con fechas)
+    const conFechas = g.fallas.filter(f=>f.ini!=null && f.fin!=null).sort((a,b)=>a.ini-b.ini);
+    let mtbf = null;
+    if(conFechas.length >= 2){
+      const uptimes = [];
+      for(let i=1;i<conFechas.length;i++){
+        const up = (conFechas[i].ini - conFechas[i-1].fin) / 3600000;
+        if(up > 0) uptimes.push(up);
+      }
+      if(uptimes.length) mtbf = uptimes.reduce((s,v)=>s+v,0)/uptimes.length;
+    }
+    const disp = (mttr!=null && mtbf!=null && (mtbf+mttr)>0) ? (mtbf/(mtbf+mttr))*100 : null;
+
+    equipos.push({
+      sap:g.sap, equipo:g.equipo, area:g.area,
+      nFallas:g.fallas.length, nConDatos:dts.length,
+      mttr, mtbf, disp, horasDetenido,
+    });
+  }
+  equipos.sort((a,b)=> (b.nFallas-a.nFallas) || (b.horasDetenido-a.horasDetenido));
+
+  // Globales
+  const todosDts = list.map(downtimeHoras).filter(v=>v!=null);
+  const mttrGlobal = todosDts.length ? todosDts.reduce((s,v)=>s+v,0)/todosDts.length : null;
+  const horasGlobal = todosDts.reduce((s,v)=>s+v,0);
+  const mtbfs = equipos.map(e=>e.mtbf).filter(v=>v!=null);
+  const mtbfGlobal = mtbfs.length ? mtbfs.reduce((s,v)=>s+v,0)/mtbfs.length : null;
+  const dispGlobal = (mttrGlobal!=null && mtbfGlobal!=null && (mtbfGlobal+mttrGlobal)>0)
+    ? (mtbfGlobal/(mtbfGlobal+mttrGlobal))*100 : null;
+
+  return { equipos, mttrGlobal, mtbfGlobal, dispGlobal, horasGlobal, nFallasConDatos:todosDts.length };
+}
+
+function renderConfiabilidad(){
+  const data = misADFs();
+  const m = calcConfiabilidad(data);
+  const dispColor = d => d==null ? 'var(--gray)' : d>=90 ? 'var(--green)' : d>=75 ? 'var(--amber)' : 'var(--red)';
+
+  $('pane-confiabilidad').innerHTML = `
+    <div class="page-title">📊 Confiabilidad de Equipos</div>
+    <div class="page-sub">Indicadores MTTR · MTBF · Disponibilidad calculados desde los ADF registrados</div>
+
+    <div class="kpi-grid">
+      <div class="kpi accent"><div class="k-val">${fmtDur(m.mttrGlobal)}</div><div class="k-lbl">MTTR global<br><small>tiempo medio de reparación</small></div></div>
+      <div class="kpi"><div class="k-val">${fmtDur(m.mtbfGlobal)}</div><div class="k-lbl">MTBF global<br><small>tiempo medio entre fallas</small></div></div>
+      <div class="kpi"><div class="k-val" style="color:${dispColor(m.dispGlobal)}">${m.dispGlobal!=null?m.dispGlobal.toFixed(1)+'%':'—'}</div><div class="k-lbl">Disponibilidad<br><small>MTBF / (MTBF+MTTR)</small></div></div>
+      <div class="kpi"><div class="k-val">${fmtDur(m.horasGlobal)}</div><div class="k-lbl">Horas totales detenido</div></div>
+      <div class="kpi"><div class="k-val">${m.nFallasConDatos}</div><div class="k-lbl">Fallas con datos de tiempo</div></div>
+    </div>
+
+    <div class="conf-nota">
+      ℹ️ El <b>MTTR</b> usa fallas con fecha/hora de inicio y de puesta en marcha. El <b>MTBF</b> y la <b>Disponibilidad</b> requieren al menos <b>2 fallas con fechas</b> del mismo equipo.
+    </div>
+
+    <div class="section-head"><h3>Detalle por equipo</h3></div>
+    ${confiabilidadTabla(m.equipos, dispColor)}
+  `;
+}
+
+function confiabilidadTabla(equipos, dispColor){
+  if(!equipos.length) return `<div class="empty"><div class="e-icon">📊</div>Aún no hay ADF con datos suficientes para calcular indicadores.</div>`;
+  return `<div class="tbl-wrap"><table class="data">
+    <thead><tr>
+      <th>Equipo</th><th>Cód. SAP</th><th>Área</th><th>N° Fallas</th>
+      <th>MTTR</th><th>MTBF</th><th>Disponibilidad</th><th>Horas detenido</th>
+    </tr></thead>
+    <tbody>
+      ${equipos.map(e=>`<tr>
+        <td>${esc(e.equipo)}</td>
+        <td class="nowrap"><code>${esc(e.sap||'—')}</code></td>
+        <td>${esc(e.area)}</td>
+        <td style="text-align:center"><b>${e.nFallas}</b>${e.nConDatos<e.nFallas?` <small style="color:var(--gray)">(${e.nConDatos} c/datos)</small>`:''}</td>
+        <td class="nowrap">${fmtDur(e.mttr)}</td>
+        <td class="nowrap">${e.mtbf!=null?fmtDur(e.mtbf):'<small style="color:var(--gray)">—</small>'}</td>
+        <td class="nowrap"><b style="color:${dispColor(e.disp)}">${e.disp!=null?e.disp.toFixed(1)+'%':'—'}</b></td>
+        <td class="nowrap">${fmtDur(e.horasDetenido)}</td>
+      </tr>`).join('')}
+    </tbody>
+  </table></div>`;
 }
 
 /* ═══════════════════════════════════════════════════════════

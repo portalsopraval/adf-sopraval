@@ -655,14 +655,49 @@ function renderNuevo(){
 
     <div class="card">
       <div class="card-title">1 · Datos Generales</div>
-      <div class="grid-3">
+      <div class="grid-2" style="margin-bottom:16px">
         <div class="field"><label>Fecha</label><input type="date" id="f-fecha" value="${w.fecha}"></div>
-        <div class="field"><label>Área</label><select id="f-area">${AREAS.map(a=>`<option ${w.area===a?'selected':''}>${a}</option>`).join('')}</select></div>
         <div class="field"><label>N° Folio (opcional)</label><input id="f-folio" value="${esc(w.folio)}" placeholder="auto si vacío"></div>
-        <div class="field"><label>Línea</label><input id="f-linea" value="${esc(w.linea)}"></div>
-        <div class="field"><label>Equipo</label><input id="f-equipo" value="${esc(w.equipo)}" placeholder="Ej: Cinta transportadora 3"></div>
-        <div class="field"><label>Cód. SAP Equipo</label><input id="f-sap" value="${esc(w.codSap)}"></div>
       </div>
+      <div class="maq-lookup-box">
+        <div class="maq-lookup-title">🏭 Máquina / Equipo</div>
+        <div class="field">
+          <label>Buscar por Cód. SAP o nombre de equipo</label>
+          <div class="sap-wrap">
+            <input id="sap-buscar" type="text" autocomplete="off" placeholder="Ej: 10044276  ó  TRANSP ACUMULADOR..." value="">
+            <div id="sap-drop" class="sap-drop" style="display:none"></div>
+          </div>
+        </div>
+        <div class="grid-3 maq-cascade">
+          <div class="field">
+            <label>Área</label>
+            <select id="sel-area">
+              <option value="">— Área —</option>
+              ${[...new Set(MAQUINAS_PLANTA.map(m=>m.area))].sort().map(a=>`<option value="${esc(a)}" ${w.area===a?'selected':''}>${esc(a)}</option>`).join('')}
+            </select>
+          </div>
+          <div class="field">
+            <label>Línea</label>
+            <select id="sel-linea"><option value="">— Línea —</option></select>
+          </div>
+          <div class="field">
+            <label>Equipo</label>
+            <select id="sel-equipo"><option value="">— Equipo —</option></select>
+          </div>
+        </div>
+        <div id="maq-badge" class="maq-badge" style="display:${w.equipo?'flex':'none'}">
+          <span class="maq-badge-ico">✅</span>
+          <div class="maq-badge-info">
+            <strong id="maq-badge-nombre">${esc(w.equipo||'')}</strong>
+            <span id="maq-badge-meta">${w.area||''} · ${w.linea||''} · SAP: ${w.codSap||''}</span>
+          </div>
+          <button type="button" id="maq-clear" class="maq-clear-btn">✕ Limpiar</button>
+        </div>
+      </div>
+      <input type="hidden" id="f-area" value="${esc(w.area)}">
+      <input type="hidden" id="f-linea" value="${esc(w.linea)}">
+      <input type="hidden" id="f-equipo" value="${esc(w.equipo)}">
+      <input type="hidden" id="f-sap" value="${esc(w.codSap)}">
     </div>
 
     <div class="card">
@@ -713,7 +748,7 @@ function renderNuevo(){
 
   // listeners de captura
   const cap = ()=>capturarWizard();
-  ['f-fecha','f-area','f-folio','f-linea','f-equipo','f-sap','f-finicio','f-hinicio','f-min',
+  ['f-fecha','f-folio','f-finicio','f-hinicio','f-min',
    'f-fmarcha','f-hmarcha','f-ot','f-afecto','f-tipo','f-sintoma','f-modo','f-accion',
    'f-que','f-cuando','f-donde','f-quien','f-cual','f-como'].forEach(id=>{
     const el=$(id); if(el) el.addEventListener('change', cap);
@@ -726,7 +761,105 @@ function renderNuevo(){
   $('btn-generar').addEventListener('click', ()=>{ capturarWizard(); hacerAnalisis(); });
   $('btn-reset').addEventListener('click', ()=>{ _wizard=nuevoBorrador(); renderNuevo(); });
 
+  bindMaquinaSearch();
   if(w.analisis) renderAnalisisZone();
+}
+
+function bindMaquinaSearch(){
+  const selArea   = $('sel-area');
+  const selLinea  = $('sel-linea');
+  const selEquipo = $('sel-equipo');
+  const sapBuscar = $('sap-buscar');
+  const sapDrop   = $('sap-drop');
+
+  function populateLineas(area){
+    const lineas = [...new Set(MAQUINAS_PLANTA.filter(m=>m.area===area).map(m=>m.linea))].sort();
+    selLinea.innerHTML = '<option value="">— Línea —</option>' +
+      lineas.map(l=>`<option value="${esc(l)}" ${_wizard.linea===l?'selected':''}>${esc(l)}</option>`).join('');
+  }
+  function populateEquipos(area,linea){
+    const equips = MAQUINAS_PLANTA.filter(m=>m.area===area && m.linea===linea);
+    selEquipo.innerHTML = '<option value="">— Equipo —</option>' +
+      equips.map(m=>`<option value="${esc(m.nombre)}" data-sap="${esc(m.sap)}" ${_wizard.equipo===m.nombre?'selected':''}>${esc(m.nombre)}</option>`).join('');
+  }
+  function seleccionarMaquina(m){
+    $('f-area').value   = m.area;
+    $('f-linea').value  = m.linea;
+    $('f-equipo').value = m.nombre;
+    $('f-sap').value    = m.sap;
+    $('maq-badge').style.display = 'flex';
+    $('maq-badge-nombre').textContent = m.nombre;
+    $('maq-badge-meta').textContent   = `${m.area} · ${m.linea} · SAP: ${m.sap}`;
+    selArea.value = m.area;
+    populateLineas(m.area);
+    selLinea.value = m.linea;
+    populateEquipos(m.area, m.linea);
+    selEquipo.value = m.nombre;
+    sapBuscar.value = '';
+    sapDrop.style.display = 'none';
+    capturarWizard();
+  }
+  function limpiarMaquina(){
+    ['f-area','f-linea','f-equipo','f-sap'].forEach(id=>{ $(id).value=''; });
+    $('maq-badge').style.display = 'none';
+    selArea.value = '';
+    selLinea.innerHTML  = '<option value="">— Línea —</option>';
+    selEquipo.innerHTML = '<option value="">— Equipo —</option>';
+    sapBuscar.value = '';
+    capturarWizard();
+  }
+
+  // Pre-cargar selects si el wizard ya tiene valores
+  if(_wizard.area)  { populateLineas(_wizard.area); }
+  if(_wizard.area && _wizard.linea) { populateEquipos(_wizard.area, _wizard.linea); }
+
+  // Búsqueda por SAP o nombre
+  sapBuscar.addEventListener('input', ()=>{
+    const q = sapBuscar.value.trim().toUpperCase();
+    if(q.length < 2){ sapDrop.style.display='none'; return; }
+    const matches = MAQUINAS_PLANTA.filter(m=>
+      m.sap.includes(q) || m.nombre.toUpperCase().includes(q)
+    ).slice(0,15);
+    if(!matches.length){ sapDrop.style.display='none'; return; }
+    sapDrop.innerHTML = matches.map((m,i)=>`
+      <div class="sap-item" data-i="${i}">
+        <span class="sap-item-sap">${esc(m.sap)}</span>
+        <span class="sap-item-nombre">${esc(m.nombre)}</span>
+        <span class="sap-item-meta">${esc(m.area)} · ${esc(m.linea)}</span>
+      </div>`).join('');
+    sapDrop.style.display = 'block';
+    sapDrop.querySelectorAll('.sap-item').forEach((el,i)=>{
+      el.addEventListener('mousedown', e=>{ e.preventDefault(); seleccionarMaquina(matches[i]); });
+    });
+  });
+  sapBuscar.addEventListener('blur', ()=>{ setTimeout(()=>{ sapDrop.style.display='none'; },150); });
+
+  // Selects en cascada
+  selArea.addEventListener('change', ()=>{
+    const area = selArea.value;
+    selLinea.innerHTML  = '<option value="">— Línea —</option>';
+    selEquipo.innerHTML = '<option value="">— Equipo —</option>';
+    if(area) populateLineas(area);
+    $('f-area').value=''; $('f-linea').value=''; $('f-equipo').value=''; $('f-sap').value='';
+    $('maq-badge').style.display='none';
+    capturarWizard();
+  });
+  selLinea.addEventListener('change', ()=>{
+    const area=selArea.value, linea=selLinea.value;
+    selEquipo.innerHTML = '<option value="">— Equipo —</option>';
+    if(area && linea) populateEquipos(area, linea);
+    $('f-linea').value=linea; $('f-equipo').value=''; $('f-sap').value='';
+    $('maq-badge').style.display='none';
+    capturarWizard();
+  });
+  selEquipo.addEventListener('change', ()=>{
+    const opt = selEquipo.options[selEquipo.selectedIndex];
+    if(!opt || !opt.value) return;
+    const m = MAQUINAS_PLANTA.find(x=>x.nombre===opt.value && x.area===selArea.value && x.linea===selLinea.value);
+    if(m) seleccionarMaquina(m);
+  });
+
+  $('maq-clear').addEventListener('click', limpiarMaquina);
 }
 
 function capturarWizard(){

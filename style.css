@@ -282,3 +282,90 @@ tr.row-done td:last-child { opacity:1; }
 .mp-act-meta .field { flex:1; min-width:130px; }
 @media (max-width:680px){ .mp-act-row { flex-direction:column; }
   .mp-act-num { align-self:flex-start; } }
+
+/* ═══════════════════════════════════════════════════════
+   BUSCADOR DE MÁQUINAS — ADF Sopraval
+═══════════════════════════════════════════════════════ */
+.maq-lookup-box {
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  background: var(--gray-lt);
+  margin-bottom: 4px;
+}
+.maq-lookup-title {
+  font-size: .93rem;
+  font-weight: 700;
+  color: var(--blue);
+  margin-bottom: 12px;
+}
+.maq-cascade { margin-top: 10px; }
+.sap-wrap { position: relative; }
+.sap-drop {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0; right: 0;
+  background: var(--white);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 6px 18px rgba(0,0,0,.13);
+  z-index: 200;
+  max-height: 290px;
+  overflow-y: auto;
+}
+.sap-item {
+  display: grid;
+  grid-template-columns: 100px 1fr;
+  grid-template-rows: auto auto;
+  gap: 1px 10px;
+  padding: 9px 13px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+}
+.sap-item:last-child { border-bottom: none; }
+.sap-item:hover { background: var(--blue-lt); }
+.sap-item-sap {
+  grid-row: 1; grid-column: 1;
+  font-family: monospace;
+  font-size: .8rem;
+  font-weight: 700;
+  color: var(--blue);
+}
+.sap-item-nombre {
+  grid-row: 1; grid-column: 2;
+  font-size: .85rem;
+  font-weight: 500;
+  color: var(--gray-dk);
+}
+.sap-item-meta {
+  grid-row: 2; grid-column: 2;
+  font-size: .74rem;
+  color: var(--gray);
+}
+.maq-badge {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--green-lt);
+  border: 1.5px solid #86efac;
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  margin-top: 12px;
+}
+.maq-badge-ico { font-size: 1.1rem; flex-shrink: 0; }
+.maq-badge-info { flex: 1; min-width: 0; }
+.maq-badge-info strong { display: block; font-size: .88rem; color: var(--green); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.maq-badge-info span   { font-size: .75rem; color: var(--gray); }
+.maq-clear-btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 9px;
+  cursor: pointer;
+  color: var(--gray);
+  font-size: .78rem;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: background .15s, border-color .15s, color .15s;
+}
+.maq-clear-btn:hover { background: var(--red-lt); border-color: #fca5a5; color: var(--red); }

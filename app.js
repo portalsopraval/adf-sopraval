@@ -40,6 +40,9 @@ const fmtDT= iso => iso ? new Date(iso).toLocaleString('es-CL',{day:'2-digit',mo
 const initials = n => String(n||'?').trim().split(/\s+/).slice(0,2).map(w=>w[0]||'').join('').toUpperCase();
 const $  = id => document.getElementById(id);
 const esLider = () => CU && CU.role === 'lider';
+// Administradores con acceso a Indicadores y Reporte semanal
+const ADMINS = ['gvelizm@sopraval.cl','jgomezf@sopraval.cl'];
+const esAdmin = () => CU && ADMINS.includes((CU.email||'').toLowerCase());
 
 function toast(msg, type='info'){
   const t=document.createElement('div'); t.className='toast '+type; t.textContent=msg;
@@ -521,8 +524,8 @@ async function cargarUsuarios(){
    ARRANQUE APP
    ═══════════════════════════════════════════════════════════ */
 const TABS = {
-  tecnico: [['inicio','🏠 Inicio'],['nuevo','➕ Nuevo ADF'],['listado','📋 Mis ADF'],['seguimiento','📌 Seguimiento'],['tiempos','⏱ Control de Tiempos'],['confiabilidad','📊 Indicadores']],
-  lider:   [['inicio','🏠 Inicio'],['nuevo','➕ Nuevo ADF'],['listado','📋 Todos los ADF'],['seguimiento','📌 Seguimiento'],['tiempos','⏱ Control de Tiempos'],['confiabilidad','📊 Indicadores'],['mantenimiento','🔧 Planes PM'],['catalogo','📚 Catálogo'],['usuarios','👥 Usuarios']],
+  tecnico: [['inicio','🏠 Inicio'],['nuevo','➕ Nuevo ADF'],['listado','📋 Mis ADF'],['seguimiento','📌 Seguimiento'],['tiempos','⏱ Control de Tiempos']],
+  lider:   [['inicio','🏠 Inicio'],['nuevo','➕ Nuevo ADF'],['listado','📋 Todos los ADF'],['seguimiento','📌 Seguimiento'],['tiempos','⏱ Control de Tiempos'],['mantenimiento','🔧 Planes PM'],['catalogo','📚 Catálogo'],['usuarios','👥 Usuarios']],
 };
 
 function arrancarApp(){
@@ -536,7 +539,12 @@ function arrancarApp(){
 }
 
 function renderTabs(){
-  const tabs = TABS[CU.role] || TABS.tecnico;
+  const tabs = (TABS[CU.role] || TABS.tecnico).slice();
+  if(esAdmin()){
+    const item = ['confiabilidad','📊 Indicadores'];
+    const idx = tabs.findIndex(t=>t[0]==='tiempos');
+    if(idx>=0) tabs.splice(idx+1,0,item); else tabs.push(item);
+  }
   $('tabs-nav').innerHTML = tabs.map(([k,l])=>
     `<button class="tab-btn" data-tab="${k}">${l}</button>`).join('');
   $('tabs-nav').querySelectorAll('.tab-btn').forEach(b=>
@@ -544,6 +552,7 @@ function renderTabs(){
 }
 
 function irTab(tab){
+  if(tab==='confiabilidad' && !esAdmin()) tab='inicio';
   _activeTab=tab;
   $('tabs-nav').querySelectorAll('.tab-btn').forEach(b=>
     b.classList.toggle('active', b.dataset.tab===tab));
@@ -591,6 +600,7 @@ function renderInicio(){
       <div class="kpi"><div class="k-val">${c('Cerrado')}</div><div class="k-lbl">Cerrados</div></div>
       <div class="kpi"><div class="k-val" style="color:var(--red)">${recurrentes}</div><div class="k-lbl">Recurrentes abiertos</div></div>
     </div>
+    ${esAdmin()?miniIndicadoresMes():''}
     <div class="card">
       <div class="card-title">⚡ Acción rápida</div>
       <div class="card-sub">Ingresa una nueva falla y deja que el sistema proponga el análisis de causa raíz.</div>
@@ -599,6 +609,27 @@ function renderInicio(){
     <div class="section-head"><h3>Últimos análisis</h3></div>
     ${tablaADF(data.slice(0,6))}
   `;
+}
+
+// Mini-panel de indicadores del mes actual (solo admins)
+function miniIndicadoresMes(){
+  const mesActual = new Date().toISOString().slice(0,7);
+  const data = misADFs().filter(a=>(a.fecha||'').slice(0,7)===mesActual);
+  const m = calcConfiabilidad(data);
+  const dc = DISP_COLOR(m.dispGlobal);
+  const nombreMes = new Date().toLocaleDateString('es-CL',{month:'long',year:'numeric'});
+  return `
+    <div class="card mini-ind-card">
+      <div class="card-title">📊 Indicadores del mes — ${nombreMes}</div>
+      <div class="mini-ind-grid">
+        <div class="mini-ind"><div class="mi-val">${data.length}</div><div class="mi-lbl">Fallas del mes</div></div>
+        <div class="mini-ind"><div class="mi-val">${fmtDur(m.mttrGlobal)}</div><div class="mi-lbl">MTTR</div></div>
+        <div class="mini-ind"><div class="mi-val">${fmtDur(m.mtbfGlobal)}</div><div class="mi-lbl">MTBF</div></div>
+        <div class="mini-ind"><div class="mi-val" style="color:${dc}">${m.dispGlobal!=null?m.dispGlobal.toFixed(1)+'%':'—'}</div><div class="mi-lbl">Disponibilidad</div></div>
+        <div class="mini-ind"><div class="mi-val">${fmtDur(m.horasGlobal)}</div><div class="mi-lbl">Horas detenido</div></div>
+      </div>
+      <button class="btn-ghost btn-sm" onclick="irTab('confiabilidad')" style="margin-top:12px">Ver indicadores completos →</button>
+    </div>`;
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -704,11 +735,11 @@ function renderNuevo(){
     <div class="card">
       <div class="card-title">2 · Datos de la Avería</div>
       <div class="grid-3">
-        <div class="field"><label>Fecha inicio</label><input type="date" id="f-finicio" value="${w.fechaInicio}"></div>
-        <div class="field"><label>Hora inicio</label><input type="time" id="f-hinicio" value="${w.horaInicio}"></div>
-        <div class="field"><label>Minutos perdidos producción</label><input type="number" id="f-min" value="${esc(w.minutosPerdidos)}"></div>
-        <div class="field"><label>Fecha puesta en marcha</label><input type="date" id="f-fmarcha" value="${w.fechaMarcha}"></div>
-        <div class="field"><label>Hora puesta en marcha</label><input type="time" id="f-hmarcha" value="${w.horaMarcha}"></div>
+        <div class="field"><label>Fecha inicio <span class="req">*</span></label><input type="date" id="f-finicio" value="${w.fechaInicio}"></div>
+        <div class="field"><label>Hora inicio <span class="req">*</span></label><input type="time" id="f-hinicio" value="${w.horaInicio}"></div>
+        <div class="field"><label>Minutos perdidos producción <small style="color:var(--gray)">(automático)</small></label><input type="number" id="f-min" value="${esc(w.minutosPerdidos)}" readonly style="background:var(--gray-lt)"></div>
+        <div class="field"><label>Fecha puesta en marcha <span class="req">*</span></label><input type="date" id="f-fmarcha" value="${w.fechaMarcha}"></div>
+        <div class="field"><label>Hora puesta en marcha <span class="req">*</span></label><input type="time" id="f-hmarcha" value="${w.horaMarcha}"></div>
         <div class="field"><label>OT</label><input id="f-ot" value="${esc(w.ot)}"></div>
         <div class="field"><label>¿Afectó producción?</label><select id="f-afecto"><option ${w.afectoProduccion==='Sí'?'selected':''}>Sí</option><option ${w.afectoProduccion==='No'?'selected':''}>No</option></select></div>
         <div class="field"><label>Tipo de problema</label><select id="f-tipo"><option ${w.tipoProblema==='Esporádico'?'selected':''}>Esporádico</option><option ${w.tipoProblema==='Recurrente'?'selected':''}>Recurrente</option></select></div>
@@ -762,8 +793,28 @@ function renderNuevo(){
   $('btn-generar').addEventListener('click', ()=>{ capturarWizard(); hacerAnalisis(); });
   $('btn-reset').addEventListener('click', ()=>{ _wizard=nuevoBorrador(); renderNuevo(); });
 
+  // Cálculo automático de minutos perdidos a partir de inicio y puesta en marcha
+  ['f-finicio','f-hinicio','f-fmarcha','f-hmarcha','f-afecto'].forEach(id=>{
+    const el=$(id); if(el) el.addEventListener('change', recalcularMinutos);
+  });
+
   bindMaquinaSearch();
   if(w.analisis) renderAnalisisZone();
+}
+
+function recalcularMinutos(){
+  const ini = fechaHoraMs($('f-finicio')?.value, $('f-hinicio')?.value);
+  const fin = fechaHoraMs($('f-fmarcha')?.value, $('f-hmarcha')?.value);
+  const afecto = $('f-afecto')?.value;
+  const elMin = $('f-min');
+  if(!elMin) return;
+  if(afecto === 'No'){ elMin.value = 0; capturarWizard(); return; }
+  if(ini!=null && fin!=null && fin>ini){
+    elMin.value = Math.round((fin - ini)/60000); // minutos
+  } else {
+    elMin.value = '';
+  }
+  capturarWizard();
 }
 
 function bindMaquinaSearch(){
@@ -954,6 +1005,13 @@ function agregarPlan(){ _wizard.analisis.planes.push({actividad:'',tipo:'PERMANE
 async function guardarADF(){
   const w=_wizard;
   if(!w.equipo || !w.sintoma){ toast('Completa al menos Equipo y Síntoma.','err'); return; }
+  if(!w.fechaInicio || !w.horaInicio || !w.fechaMarcha || !w.horaMarcha){
+    toast('Ingresa fecha y hora de inicio de falla y de puesta en marcha (necesarias para los indicadores).','err'); return;
+  }
+  const _ini = fechaHoraMs(w.fechaInicio, w.horaInicio), _fin = fechaHoraMs(w.fechaMarcha, w.horaMarcha);
+  if(_ini!=null && _fin!=null && _fin<=_ini){
+    toast('La puesta en marcha debe ser posterior al inicio de la falla.','err'); return;
+  }
   const folio = w.folio || await generarFolio();
   const id=uid();
   const adf={
@@ -1230,6 +1288,7 @@ function renderConfiabilidad(){
         <button class="btn-ghost btn-sm" id="ind-limpiar">Limpiar</button>
       </div>
       <div class="ind-export">
+        <button class="btn-primary btn-sm" id="ind-semanal">🗓 Reporte semanal</button>
         <button class="btn-secondary btn-sm" id="ind-xls">📑 Exportar Excel</button>
         <button class="btn-secondary btn-sm" id="ind-pdf">📄 Exportar PDF</button>
       </div>
@@ -1254,6 +1313,7 @@ function renderConfiabilidad(){
         <div class="chart-card"><div class="chart-title">Tendencia mensual (fallas vs MTTR)</div><div class="chart-box"><canvas id="ch-tend"></canvas></div></div>
         <div class="chart-card"><div class="chart-title">Tipo de problema</div><div class="chart-box"><canvas id="ch-tipo"></canvas></div></div>
         <div class="chart-card"><div class="chart-title">Estado de los ADF</div><div class="chart-box"><canvas id="ch-estado"></canvas></div></div>
+        <div class="chart-card chart-wide"><div class="chart-title">Pareto de causas raíz — prioriza qué corregir primero</div><div class="chart-box"><canvas id="ch-pareto"></canvas></div></div>
       </div>
 
       <div class="conf-nota">
@@ -1273,14 +1333,32 @@ function renderConfiabilidad(){
   $('ind-limpiar').addEventListener('click', ()=>{ _indFiltro={area:'',desde:'',hasta:''}; refrescar(); });
   $('ind-xls').addEventListener('click', ()=>exportarIndicadoresExcel(data, m, ex));
   $('ind-pdf').addEventListener('click', ()=>exportarIndicadoresPDF());
+  $('ind-semanal').addEventListener('click', reporteSemanal);
 
   construirGraficos(data, m);
+}
+
+// Causa raíz = causa marcada como "más probable" en cada ADF
+function paretoCausas(data){
+  const map = {};
+  data.forEach(a=>{
+    const causas = a.analisis?.causas || [];
+    const prob = causas.find(c=>c.probable);
+    const txt = (prob?.txt || '').trim();
+    if(txt) map[txt] = (map[txt]||0)+1;
+  });
+  const arr = Object.entries(map).map(([k,v])=>({k,v})).sort((a,b)=>b.v-a.v).slice(0,12);
+  const total = arr.reduce((s,x)=>s+x.v,0);
+  let acc = 0;
+  arr.forEach(x=>{ acc += x.v; x.cum = total ? Math.round(acc/total*1000)/10 : 0; });
+  return arr;
 }
 
 function construirGraficos(data, m){
   if(typeof Chart === 'undefined') return;
   Chart.defaults.font.family = "'Open Sans', sans-serif";
   Chart.defaults.font.size = 11;
+  Chart.defaults.animation = false; // captura inmediata para PDF
   const mk = (id, cfg)=>{ const el=$(id); if(el){ _indCharts.push(new Chart(el, cfg)); } };
 
   // Fallas por área
@@ -1327,6 +1405,35 @@ function construirGraficos(data, m){
   mk('ch-estado', { type:'doughnut', data:{ labels:pe.map(x=>x.k),
     datasets:[{ data:pe.map(x=>x.v), backgroundColor:PALETA }] },
     options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom'}} } });
+
+  // Pareto de causas raíz: barras (frecuencia) + línea (% acumulado)
+  const par = paretoCausas(data);
+  mk('ch-pareto', { data:{ labels:par.map(x=>x.k.length>30?x.k.slice(0,30)+'…':x.k),
+    datasets:[
+      { type:'bar', label:'N° de fallas', data:par.map(x=>x.v), backgroundColor:'#1B3580', yAxisID:'y', order:2 },
+      { type:'line', label:'% acumulado', data:par.map(x=>x.cum), borderColor:'#F07B1B', backgroundColor:'#F07B1B', tension:.2, yAxisID:'y1', order:1 } ] },
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{position:'top'} },
+      scales:{ y:{position:'left',beginAtZero:true,title:{display:true,text:'Frecuencia'}},
+        y1:{position:'right',beginAtZero:true,max:100,grid:{drawOnChartArea:false},title:{display:true,text:'% acumulado'},ticks:{callback:v=>v+'%'}} } } });
+}
+
+/* ── Reporte semanal (semana anterior, lunes a domingo) ── */
+function rangoSemanaAnterior(){
+  const d = new Date(); d.setHours(0,0,0,0);
+  const dow = (d.getDay()+6)%7;                 // 0 = lunes
+  const lunesEsta = new Date(d); lunesEsta.setDate(d.getDate()-dow);
+  const lunesPrev = new Date(lunesEsta); lunesPrev.setDate(lunesEsta.getDate()-7);
+  const domingoPrev = new Date(lunesEsta); domingoPrev.setDate(lunesEsta.getDate()-1);
+  const iso = x=> `${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,'0')}-${String(x.getDate()).padStart(2,'0')}`;
+  return { desde:iso(lunesPrev), hasta:iso(domingoPrev) };
+}
+function reporteSemanal(){
+  const r = rangoSemanaAnterior();
+  _indFiltro = { area:'', desde:r.desde, hasta:r.hasta };
+  renderConfiabilidad();
+  toast(`Generando reporte de la semana ${r.desde} a ${r.hasta}…`,'info');
+  setTimeout(()=>exportarIndicadoresPDF(`Reporte_Semanal_ADF_${r.desde}_a_${r.hasta}`), 450);
 }
 
 /* ── Exportar a Excel (.xlsx) ── */
@@ -1371,7 +1478,7 @@ function exportarIndicadoresExcel(data, m, ex){
 }
 
 /* ── Exportar a PDF ── */
-async function exportarIndicadoresPDF(){
+async function exportarIndicadoresPDF(nombreArchivo){
   const node = $('ind-capture');
   if(!node || typeof html2canvas==='undefined' || !window.jspdf){ toast('No se cargaron las librerías de PDF.','err'); return; }
   toast('Generando PDF…','info');
@@ -1401,8 +1508,9 @@ async function exportarIndicadoresPDF(){
       pdf.addImage(img, 'JPEG', margin, position, imgW, imgH);
       heightLeft -= (ph - margin);
     }
-    pdf.save(`Indicadores_ADF_${new Date().toISOString().slice(0,10)}.pdf`);
-    toast('PDF generado.','ok');
+    const fname = (nombreArchivo && typeof nombreArchivo==='string') ? nombreArchivo : `Indicadores_ADF_${new Date().toISOString().slice(0,10)}`;
+    pdf.save(`${fname}.pdf`);
+    toast('PDF generado. Adjúntalo al correo para enviarlo a jefaturas.','ok');
   }catch(e){ console.error(e); toast('Error al generar PDF: '+e.message,'err'); }
 }
 

@@ -407,3 +407,21 @@ table.data code { font-family: monospace; font-size: .82rem; color: var(--blue);
 .chart-title { font-size: .9rem; font-weight: 700; color: var(--blue); margin-bottom: 12px; }
 .chart-box { position: relative; height: 240px; }
 @media (max-width:680px){ .ind-charts { grid-template-columns: 1fr; } }
+
+/* ── Mini-indicadores en Inicio (admins) ── */
+.mini-ind-card { border-left: 4px solid var(--orange); }
+.mini-ind-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(120px,1fr));
+  gap: 14px; margin-top: 6px;
+}
+.mini-ind {
+  text-align: center; padding: 12px 8px;
+  background: var(--gray-lt); border-radius: var(--radius-sm);
+}
+.mini-ind .mi-val { font-size: 1.4rem; font-weight: 800; color: var(--blue); line-height: 1.1; }
+.mini-ind .mi-lbl { font-size: .72rem; color: var(--gray); margin-top: 4px; }
+
+/* ── Grafico Pareto ancho ── */
+.chart-wide { grid-column: 1 / -1; }
+.chart-wide .chart-box { height: 300px; }
+.field .req { color: var(--red); font-weight: 700; }

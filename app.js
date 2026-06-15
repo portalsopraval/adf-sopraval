@@ -521,8 +521,8 @@ async function cargarUsuarios(){
    ARRANQUE APP
    ═══════════════════════════════════════════════════════════ */
 const TABS = {
-  tecnico: [['inicio','🏠 Inicio'],['nuevo','➕ Nuevo ADF'],['listado','📋 Mis ADF'],['seguimiento','📌 Seguimiento'],['tiempos','⏱ Control de Tiempos'],['confiabilidad','📊 Confiabilidad']],
-  lider:   [['inicio','🏠 Inicio'],['nuevo','➕ Nuevo ADF'],['listado','📋 Todos los ADF'],['seguimiento','📌 Seguimiento'],['tiempos','⏱ Control de Tiempos'],['confiabilidad','📊 Confiabilidad'],['mantenimiento','🔧 Planes PM'],['catalogo','📚 Catálogo'],['usuarios','👥 Usuarios']],
+  tecnico: [['inicio','🏠 Inicio'],['nuevo','➕ Nuevo ADF'],['listado','📋 Mis ADF'],['seguimiento','📌 Seguimiento'],['tiempos','⏱ Control de Tiempos'],['confiabilidad','📊 Indicadores']],
+  lider:   [['inicio','🏠 Inicio'],['nuevo','➕ Nuevo ADF'],['listado','📋 Todos los ADF'],['seguimiento','📌 Seguimiento'],['tiempos','⏱ Control de Tiempos'],['confiabilidad','📊 Indicadores'],['mantenimiento','🔧 Planes PM'],['catalogo','📚 Catálogo'],['usuarios','👥 Usuarios']],
 };
 
 function arrancarApp(){
@@ -1174,30 +1174,236 @@ function calcConfiabilidad(list){
   return { equipos, mttrGlobal, mtbfGlobal, dispGlobal, horasGlobal, nFallasConDatos:todosDts.length };
 }
 
+let _indFiltro = { area:'', desde:'', hasta:'' };
+let _indCharts = [];
+const DISP_COLOR = d => d==null ? '#9CA3AF' : d>=90 ? '#15803D' : d>=75 ? '#B45309' : '#B91C1C';
+const PALETA = ['#1B3580','#F07B1B','#2A4A9B','#15803D','#B91C1C','#B45309','#0284C7','#7C3AED','#0891B2','#DB2777','#65A30D','#475569'];
+
+// Aplica los filtros activos (área + rango de fechas) sobre los ADF
+function indADFsFiltrados(){
+  let data = misADFs();
+  if(_indFiltro.area)  data = data.filter(a=>a.area===_indFiltro.area);
+  if(_indFiltro.desde) data = data.filter(a=>(a.fecha||'') >= _indFiltro.desde);
+  if(_indFiltro.hasta) data = data.filter(a=>(a.fecha||'') <= _indFiltro.hasta);
+  return data;
+}
+
+// Métricas extra: minutos perdidos, cumplimiento de planes, modo más frecuente, etc.
+function indMetricasExtra(data){
+  const minPerdidos = data.reduce((s,a)=>s + (parseFloat(a.minutosPerdidos)||0), 0);
+  const recurrentes = data.filter(a=>a.tipoProblema==='Recurrente').length;
+  let planesTotal=0, planesHechos=0;
+  data.forEach(a=>{
+    const planes = a.analisis?.planes || [];
+    const seg = a.seguimiento || [];
+    planes.forEach((pl,i)=>{ planesTotal++; if(seg[i]?.hecho || seg[i]?.realizado?.trim()) planesHechos++; });
+  });
+  const cumplimiento = planesTotal ? (planesHechos/planesTotal)*100 : null;
+  return { minPerdidos, recurrentes, planesTotal, planesHechos, cumplimiento };
+}
+
+// Cuenta agrupada por un campo (devuelve [{k,v}] ordenado desc)
+function contarPor(data, fn){
+  const map = {};
+  data.forEach(a=>{ const k = fn(a) || '—'; map[k] = (map[k]||0)+1; });
+  return Object.entries(map).map(([k,v])=>({k,v})).sort((a,b)=>b.v-a.v);
+}
+
 function renderConfiabilidad(){
-  const data = misADFs();
+  _indCharts.forEach(c=>{ try{c.destroy();}catch(e){} }); _indCharts=[];
+  const data = indADFsFiltrados();
   const m = calcConfiabilidad(data);
-  const dispColor = d => d==null ? 'var(--gray)' : d>=90 ? 'var(--green)' : d>=75 ? 'var(--amber)' : 'var(--red)';
+  const ex = indMetricasExtra(data);
+  const areas = [...new Set(misADFs().map(a=>a.area).filter(Boolean))].sort();
 
   $('pane-confiabilidad').innerHTML = `
-    <div class="page-title">📊 Confiabilidad de Equipos</div>
-    <div class="page-sub">Indicadores MTTR · MTBF · Disponibilidad calculados desde los ADF registrados</div>
+    <div class="page-title">📊 Indicadores de Mantenimiento</div>
+    <div class="page-sub">Análisis de fallas, confiabilidad y disponibilidad — ${data.length} ADF en el filtro actual</div>
 
-    <div class="kpi-grid">
-      <div class="kpi accent"><div class="k-val">${fmtDur(m.mttrGlobal)}</div><div class="k-lbl">MTTR global<br><small>tiempo medio de reparación</small></div></div>
-      <div class="kpi"><div class="k-val">${fmtDur(m.mtbfGlobal)}</div><div class="k-lbl">MTBF global<br><small>tiempo medio entre fallas</small></div></div>
-      <div class="kpi"><div class="k-val" style="color:${dispColor(m.dispGlobal)}">${m.dispGlobal!=null?m.dispGlobal.toFixed(1)+'%':'—'}</div><div class="k-lbl">Disponibilidad<br><small>MTBF / (MTBF+MTTR)</small></div></div>
-      <div class="kpi"><div class="k-val">${fmtDur(m.horasGlobal)}</div><div class="k-lbl">Horas totales detenido</div></div>
-      <div class="kpi"><div class="k-val">${m.nFallasConDatos}</div><div class="k-lbl">Fallas con datos de tiempo</div></div>
+    <div class="ind-toolbar">
+      <div class="ind-filtros">
+        <div class="field"><label>Área</label>
+          <select id="ind-area"><option value="">Todas</option>${areas.map(a=>`<option value="${esc(a)}" ${_indFiltro.area===a?'selected':''}>${esc(a)}</option>`).join('')}</select>
+        </div>
+        <div class="field"><label>Desde</label><input type="date" id="ind-desde" value="${_indFiltro.desde}"></div>
+        <div class="field"><label>Hasta</label><input type="date" id="ind-hasta" value="${_indFiltro.hasta}"></div>
+        <button class="btn-ghost btn-sm" id="ind-limpiar">Limpiar</button>
+      </div>
+      <div class="ind-export">
+        <button class="btn-secondary btn-sm" id="ind-xls">📑 Exportar Excel</button>
+        <button class="btn-secondary btn-sm" id="ind-pdf">📄 Exportar PDF</button>
+      </div>
     </div>
 
-    <div class="conf-nota">
-      ℹ️ El <b>MTTR</b> usa fallas con fecha/hora de inicio y de puesta en marcha. El <b>MTBF</b> y la <b>Disponibilidad</b> requieren al menos <b>2 fallas con fechas</b> del mismo equipo.
-    </div>
+    <div id="ind-capture">
+      <div class="kpi-grid">
+        <div class="kpi accent"><div class="k-val">${fmtDur(m.mttrGlobal)}</div><div class="k-lbl">MTTR<br><small>tiempo medio reparación</small></div></div>
+        <div class="kpi"><div class="k-val">${fmtDur(m.mtbfGlobal)}</div><div class="k-lbl">MTBF<br><small>tiempo medio entre fallas</small></div></div>
+        <div class="kpi"><div class="k-val" style="color:${DISP_COLOR(m.dispGlobal)}">${m.dispGlobal!=null?m.dispGlobal.toFixed(1)+'%':'—'}</div><div class="k-lbl">Disponibilidad</div></div>
+        <div class="kpi"><div class="k-val">${data.length}</div><div class="k-lbl">Total fallas (ADF)</div></div>
+        <div class="kpi"><div class="k-val" style="color:var(--red)">${ex.recurrentes}</div><div class="k-lbl">Recurrentes</div></div>
+        <div class="kpi"><div class="k-val">${fmtDur(m.horasGlobal)}</div><div class="k-lbl">Horas detenido</div></div>
+        <div class="kpi"><div class="k-val">${Math.round(ex.minPerdidos)}</div><div class="k-lbl">Min. perdidos prod.</div></div>
+        <div class="kpi"><div class="k-val" style="color:${ex.cumplimiento==null?'var(--gray)':ex.cumplimiento>=80?'var(--green)':'var(--amber)'}">${ex.cumplimiento!=null?ex.cumplimiento.toFixed(0)+'%':'—'}</div><div class="k-lbl">Cumplim. planes<br><small>${ex.planesHechos}/${ex.planesTotal}</small></div></div>
+      </div>
 
-    <div class="section-head"><h3>Detalle por equipo</h3></div>
-    ${confiabilidadTabla(m.equipos, dispColor)}
+      <div class="ind-charts">
+        <div class="chart-card"><div class="chart-title">Fallas por área</div><div class="chart-box"><canvas id="ch-area"></canvas></div></div>
+        <div class="chart-card"><div class="chart-title">Top 10 equipos por horas detenido</div><div class="chart-box"><canvas id="ch-equipos"></canvas></div></div>
+        <div class="chart-card"><div class="chart-title">Distribución por modo de falla</div><div class="chart-box"><canvas id="ch-modo"></canvas></div></div>
+        <div class="chart-card"><div class="chart-title">Tendencia mensual (fallas vs MTTR)</div><div class="chart-box"><canvas id="ch-tend"></canvas></div></div>
+        <div class="chart-card"><div class="chart-title">Tipo de problema</div><div class="chart-box"><canvas id="ch-tipo"></canvas></div></div>
+        <div class="chart-card"><div class="chart-title">Estado de los ADF</div><div class="chart-box"><canvas id="ch-estado"></canvas></div></div>
+      </div>
+
+      <div class="conf-nota">
+        ℹ️ <b>MTTR</b> = promedio de (puesta en marcha − inicio de falla). <b>MTBF</b> y <b>Disponibilidad</b> requieren ≥2 fallas con fechas del mismo equipo. <b>Cumplimiento</b> = planes de acción concluidos / total.
+      </div>
+
+      <div class="section-head"><h3>Detalle por equipo</h3></div>
+      ${confiabilidadTabla(m.equipos, d=>DISP_COLOR(d))}
+    </div>
   `;
+
+  // Filtros
+  const refrescar = ()=>{ renderConfiabilidad(); };
+  $('ind-area').addEventListener('change', e=>{ _indFiltro.area=e.target.value; refrescar(); });
+  $('ind-desde').addEventListener('change', e=>{ _indFiltro.desde=e.target.value; refrescar(); });
+  $('ind-hasta').addEventListener('change', e=>{ _indFiltro.hasta=e.target.value; refrescar(); });
+  $('ind-limpiar').addEventListener('click', ()=>{ _indFiltro={area:'',desde:'',hasta:''}; refrescar(); });
+  $('ind-xls').addEventListener('click', ()=>exportarIndicadoresExcel(data, m, ex));
+  $('ind-pdf').addEventListener('click', ()=>exportarIndicadoresPDF());
+
+  construirGraficos(data, m);
+}
+
+function construirGraficos(data, m){
+  if(typeof Chart === 'undefined') return;
+  Chart.defaults.font.family = "'Open Sans', sans-serif";
+  Chart.defaults.font.size = 11;
+  const mk = (id, cfg)=>{ const el=$(id); if(el){ _indCharts.push(new Chart(el, cfg)); } };
+
+  // Fallas por área
+  const pa = contarPor(data, a=>a.area);
+  mk('ch-area', { type:'bar', data:{ labels:pa.map(x=>x.k),
+    datasets:[{ data:pa.map(x=>x.v), backgroundColor:'#1B3580' }] },
+    options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}} } });
+
+  // Top 10 equipos por horas detenido
+  const topEq = [...m.equipos].sort((a,b)=>b.horasDetenido-a.horasDetenido).slice(0,10);
+  mk('ch-equipos', { type:'bar', data:{ labels:topEq.map(e=>(e.equipo||'—').slice(0,24)),
+    datasets:[{ data:topEq.map(e=>Math.round(e.horasDetenido*10)/10), backgroundColor:'#F07B1B' }] },
+    options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false},
+      tooltip:{callbacks:{label:c=>c.parsed.x+' h detenido'}} } } });
+
+  // Modo de falla
+  const pm = contarPor(data, a=>a.analisis?.modoDetectado || a.modoFalla || 'Sin clasificar');
+  mk('ch-modo', { type:'doughnut', data:{ labels:pm.map(x=>x.k),
+    datasets:[{ data:pm.map(x=>x.v), backgroundColor:PALETA }] },
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'right',labels:{boxWidth:12}}} } });
+
+  // Tendencia mensual: fallas (barra) + MTTR (línea)
+  const meses = {};
+  data.forEach(a=>{ const mk2=(a.fecha||'').slice(0,7); if(!mk2) return;
+    if(!meses[mk2]) meses[mk2]={n:0,dt:[]}; meses[mk2].n++;
+    const dt=downtimeHoras(a); if(dt!=null) meses[mk2].dt.push(dt); });
+  const labelsM = Object.keys(meses).sort();
+  mk('ch-tend', { data:{ labels:labelsM,
+    datasets:[
+      { type:'bar', label:'N° fallas', data:labelsM.map(k=>meses[k].n), backgroundColor:'#2A4A9B', yAxisID:'y' },
+      { type:'line', label:'MTTR (h)', data:labelsM.map(k=>{const d=meses[k].dt; return d.length?Math.round(d.reduce((s,v)=>s+v,0)/d.length*10)/10:null;}), borderColor:'#F07B1B', backgroundColor:'#F07B1B', tension:.3, yAxisID:'y1' } ] },
+    options:{ responsive:true, maintainAspectRatio:false,
+      scales:{ y:{position:'left',title:{display:true,text:'Fallas'},beginAtZero:true},
+        y1:{position:'right',title:{display:true,text:'MTTR (h)'},grid:{drawOnChartArea:false},beginAtZero:true} } } });
+
+  // Tipo de problema
+  const pt = contarPor(data, a=>a.tipoProblema || 'Esporádico');
+  mk('ch-tipo', { type:'doughnut', data:{ labels:pt.map(x=>x.k),
+    datasets:[{ data:pt.map(x=>x.v), backgroundColor:['#15803D','#B91C1C'] }] },
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom'}} } });
+
+  // Estado
+  const pe = contarPor(data, a=>a.estado || '—');
+  mk('ch-estado', { type:'doughnut', data:{ labels:pe.map(x=>x.k),
+    datasets:[{ data:pe.map(x=>x.v), backgroundColor:PALETA }] },
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom'}} } });
+}
+
+/* ── Exportar a Excel (.xlsx) ── */
+function exportarIndicadoresExcel(data, m, ex){
+  if(typeof XLSX === 'undefined'){ toast('No se cargó la librería de Excel. Revisa tu conexión.','err'); return; }
+  const fnum = h => h==null ? '' : Math.round(h*100)/100;
+
+  const resumen = [
+    ['INDICADORES DE MANTENIMIENTO · ADF SOPRAVAL'],
+    ['Generado', new Date().toLocaleString('es-CL')],
+    ['Filtro área', _indFiltro.area || 'Todas'],
+    ['Filtro período', (_indFiltro.desde||'inicio') + ' a ' + (_indFiltro.hasta||'hoy')],
+    [],
+    ['Indicador','Valor'],
+    ['MTTR (h)', fnum(m.mttrGlobal)],
+    ['MTBF (h)', fnum(m.mtbfGlobal)],
+    ['Disponibilidad (%)', m.dispGlobal!=null?Math.round(m.dispGlobal*10)/10:''],
+    ['Total fallas (ADF)', data.length],
+    ['Recurrentes', ex.recurrentes],
+    ['Horas totales detenido', fnum(m.horasGlobal)],
+    ['Minutos perdidos producción', Math.round(ex.minPerdidos)],
+    ['Planes concluidos', ex.planesHechos + ' de ' + ex.planesTotal],
+    ['Cumplimiento planes (%)', ex.cumplimiento!=null?Math.round(ex.cumplimiento):''],
+  ];
+
+  const porEquipo = [['Equipo','Cód. SAP','Área','N° Fallas','Fallas c/datos','MTTR (h)','MTBF (h)','Disponibilidad (%)','Horas detenido']];
+  m.equipos.forEach(e=>porEquipo.push([ e.equipo, e.sap||'', e.area, e.nFallas, e.nConDatos,
+    fnum(e.mttr), fnum(e.mtbf), e.disp!=null?Math.round(e.disp*10)/10:'', fnum(e.horasDetenido) ]));
+
+  const detalle = [['Folio','Fecha','Área','Línea','Equipo','Cód. SAP','OT','Inicio falla','Marcha','Min. perdidos','Tipo','Modo de falla','Síntoma','Estado','T. reparación (h)']];
+  data.forEach(a=>detalle.push([ a.folio||'', a.fecha||'', a.area||'', a.linea||'', a.equipo||'', a.codSap||'',
+    a.ot||'', (a.fechaInicio||'')+' '+(a.horaInicio||''), (a.fechaMarcha||'')+' '+(a.horaMarcha||''),
+    a.minutosPerdidos||'', a.tipoProblema||'', a.analisis?.modoDetectado || a.modoFalla || '',
+    (a.sintoma||'').slice(0,120), a.estado||'', fnum(downtimeHoras(a)) ]));
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(resumen),   'Resumen');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(porEquipo), 'Por equipo');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(detalle),   'Detalle ADF');
+  XLSX.writeFile(wb, `Indicadores_ADF_${new Date().toISOString().slice(0,10)}.xlsx`);
+  toast('Excel generado.','ok');
+}
+
+/* ── Exportar a PDF ── */
+async function exportarIndicadoresPDF(){
+  const node = $('ind-capture');
+  if(!node || typeof html2canvas==='undefined' || !window.jspdf){ toast('No se cargaron las librerías de PDF.','err'); return; }
+  toast('Generando PDF…','info');
+  try{
+    const canvas = await html2canvas(node, { scale:2, backgroundColor:'#ffffff', useCORS:true });
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF('p','mm','a4');
+    const pw = pdf.internal.pageSize.getWidth();
+    const ph = pdf.internal.pageSize.getHeight();
+    const margin = 8;
+    const imgW = pw - margin*2;
+    const imgH = canvas.height * imgW / canvas.width;
+    // Cabecera
+    pdf.setFontSize(13); pdf.setTextColor(27,53,128);
+    pdf.text('Indicadores de Mantenimiento · ADF Sopraval', margin, 10);
+    pdf.setFontSize(8); pdf.setTextColor(110);
+    pdf.text(`Generado: ${new Date().toLocaleString('es-CL')}  ·  Área: ${_indFiltro.area||'Todas'}  ·  Período: ${(_indFiltro.desde||'inicio')} a ${(_indFiltro.hasta||'hoy')}`, margin, 15);
+    const top = 19;
+    const img = canvas.toDataURL('image/jpeg', 0.92);
+    let heightLeft = imgH;
+    let position = top;
+    pdf.addImage(img, 'JPEG', margin, position, imgW, imgH);
+    heightLeft -= (ph - top);
+    while(heightLeft > 0){
+      pdf.addPage();
+      position = margin - (imgH - heightLeft);
+      pdf.addImage(img, 'JPEG', margin, position, imgW, imgH);
+      heightLeft -= (ph - margin);
+    }
+    pdf.save(`Indicadores_ADF_${new Date().toISOString().slice(0,10)}.pdf`);
+    toast('PDF generado.','ok');
+  }catch(e){ console.error(e); toast('Error al generar PDF: '+e.message,'err'); }
 }
 
 function confiabilidadTabla(equipos, dispColor){

@@ -405,6 +405,138 @@ const CATALOGO = [
       {a:'Crear registro de componentes en contacto alimentario con vida útil',t:'PERMANENTE'},
       {a:'Implementar verificaciones de inocuidad en mantenimiento (use solo lubricantes H1)',t:'PERMANENTE'}],
   },
+  {
+    id:'desalineacion', nombre:'Desalineación / Desbalanceo',
+    keys:['desalin','desbalance','descentrad','excentric','aline','balanceo','mal alineado','eje torcido','acople mal','vibra por aline'],
+    causas:['Desalineación entre motor y equipo conducido','Desbalanceo del rotor/impulsor',
+      'Montaje incorrecto tras intervención','Base/anclaje suelto o deformado',
+      'Acoplamiento desgastado o dañado','Eje deformado o pandeado',
+      'Dilatación térmica no compensada','Fundación deteriorada que mueve el equipo',
+      'Pernos de fijación flojos','Tolerancias de montaje fuera de norma',
+      'Falta de alineación láser en el montaje','Desgaste desigual de componentes',
+      'Acumulación de material en partes rotativas'],
+    probable:0,
+    porques:['¿Por qué vibra/se desalinea? → Desalineación entre motor y equipo conducido',
+      '¿Por qué está desalineado? → Montaje sin alineación de precisión tras la última intervención',
+      '¿Por qué no se alineó con precisión? → No se usó alineación láser ni se verificó tolerancia',
+      '¿Por qué no se verificó? → No existe procedimiento estándar de alineación en montaje',
+      '¿Por qué no hay procedimiento? → Falta estandarizar prácticas de montaje mecánico'],
+    acciones:[
+      {a:'Alinear y balancear el conjunto motor-equipo',t:'INMEDIATA'},
+      {a:'Verificar y apretar anclajes/acoplamiento',t:'INMEDIATA'},
+      {a:'Implementar alineación láser estándar en montajes',t:'PERMANENTE'},
+      {a:'Incorporar análisis de vibraciones para detección temprana',t:'PERMANENTE'}],
+  },
+  {
+    id:'lubricacion', nombre:'Falla de lubricación',
+    keys:['lubrica','engrase','grasa','aceite','sin lubric','falta de aceite','nivel de aceite','reseco','fricci','agarrotamiento','roce'],
+    causas:['Falta de lubricación (frecuencia insuficiente)','Lubricante inadecuado para la aplicación',
+      'Lubricante degradado o contaminado','Nivel de aceite bajo por fuga',
+      'Exceso de lubricante que genera sobrecalentamiento','Punto de engrase obstruido',
+      'Sistema de lubricación automático con falla','Mezcla de lubricantes incompatibles',
+      'Falta de relubricación tras mantenimiento','Sello que permite entrada de contaminantes',
+      'Temperatura que degrada el lubricante','Intervalo de cambio no definido',
+      'Vida útil del lubricante superada'],
+    probable:0,
+    porques:['¿Por qué falló por lubricación? → Falta de lubricación en la frecuencia requerida',
+      '¿Por qué faltó lubricación? → No estaba definida la frecuencia/responsable de engrase',
+      '¿Por qué no estaba definida? → El punto no se incluyó en la rutina de lubricación',
+      '¿Por qué no se incluyó? → No se levantó la carta de lubricación del equipo',
+      '¿Por qué no hay carta de lubricación? → Falta gestión de lubricación como tarea crítica'],
+    acciones:[
+      {a:'Lubricar/relubricar con el lubricante correcto',t:'INMEDIATA'},
+      {a:'Verificar nivel, estado y puntos de engrase',t:'INMEDIATA'},
+      {a:'Definir carta de lubricación (punto, lubricante, frecuencia)',t:'PERMANENTE'},
+      {a:'Implementar control de lubricación y análisis de aceite',t:'PERMANENTE'}],
+  },
+  {
+    id:'rodamiento', nombre:'Falla de rodamiento / cojinete',
+    keys:['rodamiento','cojinete','balero','descanso','bearing','pista','rolinera','chumacera','rodaje','juego en el eje','calentamiento de descanso'],
+    causas:['Falta de lubricación del rodamiento','Contaminación del rodamiento (polvo/agua)',
+      'Sobrecarga radial o axial','Desalineación que carga el rodamiento',
+      'Montaje incorrecto (golpe en pista)','Fatiga por vida útil superada',
+      'Corriente eléctrica circulante (fluting)','Vibración transmitida desde otro componente',
+      'Lubricante inadecuado o degradado','Sello dañado que deja entrar contaminante',
+      'Holgura/ajuste fuera de tolerancia','Temperatura excesiva que degrada la grasa',
+      'Falsa brinelación por equipo detenido con vibración'],
+    probable:0,
+    porques:['¿Por qué falló el rodamiento? → Falta de lubricación / contaminación',
+      '¿Por qué faltó lubricación o se contaminó? → Sello dañado y sin relubricación programada',
+      '¿Por qué no se relubricó? → El rodamiento no está en la carta de lubricación',
+      '¿Por qué no está? → No se levantaron los componentes críticos del equipo',
+      '¿Por qué no se levantaron? → Falta análisis de criticidad de componentes'],
+    acciones:[
+      {a:'Reemplazar rodamiento y verificar sellos',t:'INMEDIATA'},
+      {a:'Revisar alineación, carga y lubricación',t:'INMEDIATA'},
+      {a:'Incluir rodamiento en carta de lubricación y plan preventivo',t:'PERMANENTE'},
+      {a:'Implementar monitoreo de vibración/temperatura de descansos',t:'PERMANENTE'}],
+  },
+  {
+    id:'transmision', nombre:'Falla de transmisión (correa/cadena/engranaje)',
+    keys:['correa','cadena','engranaje','piñon','polea','catalina','reductor','transmisi','banda','dentado','patina la correa','correa rota','cadena salt','acople'],
+    causas:['Correa/cadena desgastada o destensada','Desalineación de poleas/sprockets',
+      'Tensión incorrecta de la transmisión','Diente de engranaje roto o desgastado',
+      'Falta de lubricación en cadena/reductor','Sobrecarga que supera la capacidad',
+      'Contaminación con material abrasivo','Polea/catalina desgastada',
+      'Reductor con falla interna','Antigüedad del elemento de transmisión',
+      'Montaje incorrecto del elemento','Vibración que acelera el desgaste',
+      'Material/repuesto de transmisión inadecuado'],
+    probable:0,
+    porques:['¿Por qué falló la transmisión? → Correa/cadena desgastada y destensada',
+      '¿Por qué se desgastó/destensó? → No se inspeccionó tensión ni estado',
+      '¿Por qué no se inspeccionó? → No hay rutina de revisión de transmisiones',
+      '¿Por qué no hay rutina? → Componente no incluido en plan preventivo',
+      '¿Por qué no se incluyó? → Falta levantamiento de componentes críticos'],
+    acciones:[
+      {a:'Reemplazar / tensionar correa o cadena',t:'INMEDIATA'},
+      {a:'Alinear poleas/sprockets y revisar reductor',t:'INMEDIATA'},
+      {a:'Definir inspección periódica de tensión y desgaste',t:'PERMANENTE'},
+      {a:'Incorporar transmisiones al plan de mantenimiento preventivo',t:'PERMANENTE'}],
+  },
+  {
+    id:'neumatica_hidraulica', nombre:'Falla neumática / hidráulica',
+    keys:['neumat','hidraul','aire comprimido','presion de aire','cilindro','piston','actuador','electrovalv','solenoide','manguera','aceite hidraul','sin aire','fuga de aire'],
+    causas:['Fuga de aire/aceite en línea o conexión','Electroválvula/solenoide con falla',
+      'Cilindro/actuador con sellos desgastados','Presión de suministro insuficiente',
+      'Filtro/regulador (FRL) obstruido','Manguera fisurada o reventada',
+      'Aceite hidráulico contaminado','Bomba hidráulica con bajo rendimiento',
+      'Aire con humedad/condensado','Válvula de control mal ajustada',
+      'Acumulador descargado','Conexión floja o mal sellada',
+      'Temperatura que degrada los sellos'],
+    probable:0,
+    porques:['¿Por qué falló el sistema neumático/hidráulico? → Fuga que reduce la presión',
+      '¿Por qué hay fuga? → Sello/manguera desgastado por vida útil',
+      '¿Por qué no se reemplazó? → No hay control de vida útil de sellos/mangueras',
+      '¿Por qué no hay control? → Componentes no incluidos en plan preventivo',
+      '¿Por qué no se incluyeron? → Falta levantamiento de componentes neumáticos/hidráulicos'],
+    acciones:[
+      {a:'Detectar y reparar la fuga; restablecer la presión',t:'INMEDIATA'},
+      {a:'Revisar electroválvulas, FRL y estado del aceite',t:'INMEDIATA'},
+      {a:'Definir reemplazo programado de sellos/mangueras',t:'PERMANENTE'},
+      {a:'Implementar control de humedad y calidad del aceite hidráulico',t:'PERMANENTE'}],
+  },
+  {
+    id:'control_automatizacion', nombre:'Falla de control / automatización (PLC/HMI)',
+    keys:['plc','hmi','scada','programa','software','automatiz','tarjeta','entrada/salida','comunicaci','red industrial','profibus','profinet','ethernet','pantalla congelada','logica','variador no responde'],
+    causas:['Falla en PLC o tarjeta de E/S','Pérdida de comunicación en red industrial',
+      'Programa/lógica con error o corrupción','HMI/pantalla congelada o sin respuesta',
+      'Sensor de entrada entregando dato erróneo','Falla de alimentación al controlador',
+      'Configuración de parámetros incorrecta','Actualización de software no validada',
+      'Interferencia eléctrica en señales','Conector/cableado de red dañado',
+      'Variador sin respuesta a la orden de control','Pérdida del respaldo del programa',
+      'Falta de respaldo de la lógica de control'],
+    probable:0,
+    porques:['¿Por qué falló el control? → Pérdida de comunicación en la red industrial',
+      '¿Por qué se perdió comunicación? → Conector/cable de red dañado o interferencia',
+      '¿Por qué se dañó/interfirió? → Cableado sin mantenimiento ni apantallamiento adecuado',
+      '¿Por qué no se mantiene? → No hay rutina de inspección de redes y tableros de control',
+      '¿Por qué no hay rutina? → Falta plan de mantenimiento de sistemas de automatización'],
+    acciones:[
+      {a:'Diagnosticar PLC/comunicación y restablecer el control',t:'INMEDIATA'},
+      {a:'Verificar tarjetas de E/S, cableado de red y parámetros',t:'INMEDIATA'},
+      {a:'Mantener respaldo actualizado de la lógica de control',t:'PERMANENTE'},
+      {a:'Incluir redes y tableros de control en el plan preventivo',t:'PERMANENTE'}],
+  },
 ];
 
 const GENERICO = {
@@ -428,10 +560,13 @@ const GENERICO = {
 
 // Categorías 6M (Ishikawa) para clasificar cada causa
 const CATS_6M = ['Máquina','Mano de obra','Método','Material','Medición','Medio ambiente'];
+// Normaliza texto para comparar: minúsculas y sin tildes/diacríticos
+function norm(s){ return String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,''); }
+
 // Asigna una categoría 6M sugerida según el texto de la causa (editable luego)
 function categoria6M(txt){
-  const t = String(txt||'').toLowerCase();
-  const has = (...ks)=> ks.some(k=>t.includes(k));
+  const t = norm(txt);
+  const has = (...ks)=> ks.some(k=>t.includes(norm(k)));
   if(has('sensor','calibr','medici','señal','transmisor','medida','lectura')) return 'Medición';
   if(has('humedad','salino','ambient','temperatura','corros','cuerpo extra','sarro','incrusta','agua')) return 'Medio ambiente';
   if(has('operacional','operador','capacit','manipula','error humano','maniobra','mala operac')) return 'Mano de obra';
@@ -444,11 +579,11 @@ function categoria6M(txt){
 // Permiten asociar "causas mixtas": cuando una falla (ej. obstrucción) puede
 // originarse en varios mecanismos, se incluyen causas de todos los modos del grupo.
 const GRUPOS_ORIGEN = [
-  ['atasco','incrustacion','bajo_rendimiento','contaminacion'], // Obstrucción / flujo
-  ['vibracion','rotura','estructural','ruido'],                 // Mecánico / estructural
-  ['electrica','instrumentacion','erratico','paro_inesperado'], // Eléctrico / control
-  ['fuga','fuga_interna','corrosion'],                          // Sellado / integridad
-  ['sobrecalentamiento','bajo_rendimiento'],                    // Térmico / proceso
+  ['atasco','incrustacion','bajo_rendimiento','contaminacion'],                              // Obstrucción / flujo
+  ['vibracion','rotura','estructural','ruido','desalineacion','rodamiento','transmision'],   // Mecánico / estructural
+  ['electrica','instrumentacion','erratico','paro_inesperado','control_automatizacion'],     // Eléctrico / control
+  ['fuga','fuga_interna','corrosion','neumatica_hidraulica'],                                // Sellado / integridad / presión
+  ['sobrecalentamiento','bajo_rendimiento','lubricacion','rodamiento'],                      // Térmico / lubricación
 ];
 // Devuelve los IDs de modos que comparten origen con el modo dado
 function modosRelacionados(id){
@@ -457,13 +592,18 @@ function modosRelacionados(id){
   return [...set];
 }
 
-// Detecta TODOS los modos de falla que coinciden con el texto (ordenados por puntaje)
-function detectarModos(texto){
-  const t = String(texto||'').toLowerCase();
+// Detecta TODOS los modos de falla que coinciden con el texto (ordenados por puntaje).
+// `textoFuerte` (síntoma + modo de falla) pesa el doble para afinar el modo principal.
+function detectarModos(texto, textoFuerte){
+  const t  = norm(texto);
+  const tf = norm(textoFuerte || '');
   const hits = [];
   for(const m of CATALOGO){
     let score=0;
-    for(const k of m.keys){ if(t.includes(k)) score++; }
+    for(const k of m.keys){
+      const nk = norm(k);
+      if(t.includes(nk)){ score++; if(tf && tf.includes(nk)) score++; }
+    }
     if(score>0) hits.push({ modo:m, score });
   }
   hits.sort((a,b)=> b.score - a.score);
@@ -478,8 +618,9 @@ function detectarModo(texto){
 // Genera análisis completo a partir de los datos de la falla.
 // Asocia causas MIXTAS de acuerdo al origen de falla (varios modos a la vez).
 function generarAnalisis(adf){
-  const texto = [adf.sintoma, adf.modoFalla, adf.w_que, adf.w_como, adf.w_cual, adf.accionCorrectiva].join(' ');
-  const hits = detectarModos(texto);
+  const texto  = [adf.sintoma, adf.modoFalla, adf.w_que, adf.w_como, adf.w_cual, adf.accionCorrectiva].join(' ');
+  const fuerte = [adf.sintoma, adf.modoFalla].join(' '); // pesa el doble en la detección
+  const hits = detectarModos(texto, fuerte);
   const primary = hits.length ? hits[0].modo : GENERICO;
   const primaryId = primary.id || '';
 
@@ -500,15 +641,21 @@ function generarAnalisis(adf){
   modosRelacionados(primaryId).forEach(id=>{
     if(hits.some(h=>h.modo.id===id)) return; // ya incluido arriba
     const m = CATALOGO.find(x=>x.id===id);
-    if(m) m.causas.slice(0,3).forEach(c=> push(c, false, m.nombre));
+    if(m) m.causas.slice(0,4).forEach(c=> push(c, false, m.nombre));
   });
+  // 4) Causas generales transversales (siempre útiles como posibles fallas a descartar)
+  GENERICO.causas.forEach(c=> push(c, false, 'General'));
+
+  // Tope para no saturar la lista (las más relevantes quedan primero)
+  const MAX_CAUSAS = 28;
+  const causasFinal = causas.slice(0, MAX_CAUSAS);
 
   // Orígenes adicionales realmente presentes en las causas (excluye el principal)
-  const otros = [...new Set(causas.map(c=>c.origen))].filter(o=> o && o!==primary.nombre);
+  const otros = [...new Set(causasFinal.map(c=>c.origen))].filter(o=> o && o!==primary.nombre);
   return {
     modoDetectado: primary.nombre,
     modosMixtos: otros,
-    causas,
+    causas: causasFinal,
     porques: (primary.porques || GENERICO.porques).slice(),
     planes: (primary.acciones || GENERICO.acciones).map(a=>({ actividad:a.a, tipo:a.t, responsable:'', fecha:'' })),
   };

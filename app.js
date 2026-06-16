@@ -146,7 +146,9 @@ const CATALOGO = [
   },
   {
     id:'atasco', nombre:'Atascamiento / Obstrucción',
-    keys:['atasc','obstru','tranc','bloque','tap','acumul','traba'],
+    keys:['atasc','obstru','tranc','bloque','tap','acumul','traba','colmat','congesti',
+      'embanc','embanque','apelmaz','compact','pegado','adheri','no fluye','no avanza',
+      'no descarga','se detiene el flujo','material acumulado','pluma','cuerpo extraño','atorad'],
     causas:['Acumulación de producto/material','Cuerpo extraño en el sistema','Falta de limpieza',
       'Desgaste que reduce holguras','Producto fuera de especificación','Velocidad/flujo inadecuado',
       'Diseño con zonas de retención','Falla en sistema de descarga','Humedad que apelmaza material',
@@ -438,27 +440,77 @@ function categoria6M(txt){
   return 'Máquina';
 }
 
-// Detecta el mejor modo de falla según texto libre
-function detectarModo(texto){
+// Grupos de modos que comparten un mismo ORIGEN físico de falla.
+// Permiten asociar "causas mixtas": cuando una falla (ej. obstrucción) puede
+// originarse en varios mecanismos, se incluyen causas de todos los modos del grupo.
+const GRUPOS_ORIGEN = [
+  ['atasco','incrustacion','bajo_rendimiento','contaminacion'], // Obstrucción / flujo
+  ['vibracion','rotura','estructural','ruido'],                 // Mecánico / estructural
+  ['electrica','instrumentacion','erratico','paro_inesperado'], // Eléctrico / control
+  ['fuga','fuga_interna','corrosion'],                          // Sellado / integridad
+  ['sobrecalentamiento','bajo_rendimiento'],                    // Térmico / proceso
+];
+// Devuelve los IDs de modos que comparten origen con el modo dado
+function modosRelacionados(id){
+  const set = new Set();
+  for(const g of GRUPOS_ORIGEN){ if(g.includes(id)) g.forEach(x=>{ if(x!==id) set.add(x); }); }
+  return [...set];
+}
+
+// Detecta TODOS los modos de falla que coinciden con el texto (ordenados por puntaje)
+function detectarModos(texto){
   const t = String(texto||'').toLowerCase();
-  let best=null, bestScore=0;
+  const hits = [];
   for(const m of CATALOGO){
     let score=0;
     for(const k of m.keys){ if(t.includes(k)) score++; }
-    if(score>bestScore){ bestScore=score; best=m; }
+    if(score>0) hits.push({ modo:m, score });
   }
-  return best || GENERICO;
+  hits.sort((a,b)=> b.score - a.score);
+  return hits;
+}
+// Compatibilidad: mejor modo individual
+function detectarModo(texto){
+  const hits = detectarModos(texto);
+  return hits.length ? hits[0].modo : GENERICO;
 }
 
-// Genera análisis completo a partir de los datos de la falla
+// Genera análisis completo a partir de los datos de la falla.
+// Asocia causas MIXTAS de acuerdo al origen de falla (varios modos a la vez).
 function generarAnalisis(adf){
   const texto = [adf.sintoma, adf.modoFalla, adf.w_que, adf.w_como, adf.w_cual, adf.accionCorrectiva].join(' ');
-  const modo = detectarModo(texto);
+  const hits = detectarModos(texto);
+  const primary = hits.length ? hits[0].modo : GENERICO;
+  const primaryId = primary.id || '';
+
+  const causas = [];
+  const vistos = new Set();
+  const push = (txt, probable, origen) => {
+    const key = String(txt).toLowerCase().trim();
+    if(!key || vistos.has(key)) return;
+    vistos.add(key);
+    causas.push({ txt, probable, cat: categoria6M(txt), origen });
+  };
+
+  // 1) Causas del modo principal (la sugerida queda marcada como probable)
+  primary.causas.forEach((c,i)=> push(c, i===primary.probable, primary.nombre));
+  // 2) Causas de los demás modos detectados en el texto (causas mixtas)
+  hits.slice(1).forEach(({modo})=> modo.causas.slice(0,6).forEach(c=> push(c, false, modo.nombre)));
+  // 3) Causas de modos que comparten origen aunque no hayan aparecido en el texto
+  modosRelacionados(primaryId).forEach(id=>{
+    if(hits.some(h=>h.modo.id===id)) return; // ya incluido arriba
+    const m = CATALOGO.find(x=>x.id===id);
+    if(m) m.causas.slice(0,3).forEach(c=> push(c, false, m.nombre));
+  });
+
+  // Orígenes adicionales realmente presentes en las causas (excluye el principal)
+  const otros = [...new Set(causas.map(c=>c.origen))].filter(o=> o && o!==primary.nombre);
   return {
-    modoDetectado: modo.nombre,
-    causas: modo.causas.map((c,i)=>({ txt:c, probable: i===modo.probable, cat: categoria6M(c) })),
-    porques: modo.porques.slice(),
-    planes: modo.acciones.map(a=>({ actividad:a.a, tipo:a.t, responsable:'', fecha:'' })),
+    modoDetectado: primary.nombre,
+    modosMixtos: otros,
+    causas,
+    porques: (primary.porques || GENERICO.porques).slice(),
+    planes: (primary.acciones || GENERICO.acciones).map(a=>({ actividad:a.a, tipo:a.t, responsable:'', fecha:'' })),
   };
 }
 
@@ -1015,7 +1067,7 @@ function renderAnalisisZone(){
   const an=_wizard.analisis;
   $('analisis-zone').innerHTML = `
     <div class="section-head"><h3>Análisis propuesto — modo detectado: ${esc(an.modoDetectado)}</h3>
-      <p>Revisa y ajusta. Marca la causa más probable.</p></div>
+      <p>Revisa y ajusta. Marca todas las causas probables.${(an.modosMixtos&&an.modosMixtos.length)?` <b>Causas mixtas por origen:</b> ${esc(an.modosMixtos.join(' · '))}.`:''}</p></div>
 
     <div class="card">
       <div class="card-title">4 · Causas Probables (marca todas las que apliquen)</div>
@@ -1106,12 +1158,15 @@ function quitarIntegrante(i){
   $('equipo-list').innerHTML = _wizard.equipoAnalisis.map((p,j)=>equipoRowHTML(p,j)).join('');
 }
 
-// Fila de causa: checkbox (varias probables) + texto + categoría 6M
+// Fila de causa: checkbox (varias probables) + texto + origen + categoría 6M
 function causaRowHTML(c,i){
   return `<label class="causa-item ${c.probable?'probable':''}" id="causa-${i}">
     <input type="checkbox" ${c.probable?'checked':''} onchange="toggleProbable(${i},this.checked)">
     <span class="c-num">${i+1}</span>
-    <span class="c-txt"><textarea rows="1" onchange="editCausa(${i},this.value)">${esc(c.txt)}</textarea></span>
+    <span class="c-txt">
+      <textarea rows="1" onchange="editCausa(${i},this.value)">${esc(c.txt)}</textarea>
+      ${c.origen?`<span class="origen-tag" title="Origen de falla asociado">${esc(c.origen)}</span>`:''}
+    </span>
     <select class="c-cat" onchange="editCausaCat(${i},this.value)" title="Categoría 6M (Ishikawa)">
       ${CATS_6M.map(k=>`<option ${(c.cat||'Máquina')===k?'selected':''}>${k}</option>`).join('')}
     </select>
@@ -1123,7 +1178,7 @@ function toggleProbable(i,on){ _wizard.analisis.causas[i].probable=on;
   document.getElementById('causa-'+i)?.classList.toggle('probable',on); }
 function editCausaCat(i,v){ _wizard.analisis.causas[i].cat=v; }
 function agregarCausa(){
-  _wizard.analisis.causas.push({txt:'',probable:true,cat:'Máquina'});
+  _wizard.analisis.causas.push({txt:'',probable:true,cat:'Máquina',origen:'Manual'});
   const i=_wizard.analisis.causas.length-1;
   $('causa-list').insertAdjacentHTML('beforeend', causaRowHTML(_wizard.analisis.causas[i], i));
 }

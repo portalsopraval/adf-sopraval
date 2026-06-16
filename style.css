@@ -166,6 +166,8 @@ table.data .row-click { cursor:pointer; }
   border:1px solid var(--border); border-radius:6px; background:var(--gray-lt); color:var(--blue); font-weight:600; }
 .cat-tag { display:inline-block; background:var(--blue); color:#fff; font-size:.68rem; font-weight:700;
   padding:1px 7px; border-radius:10px; vertical-align:middle; letter-spacing:.2px; }
+.origen-tag { display:inline-block; margin-top:4px; background:var(--gray-lt); color:var(--blue);
+  border:1px solid var(--border); font-size:.66rem; font-weight:700; padding:1px 8px; border-radius:10px; letter-spacing:.2px; }
 .part-row { display:flex; gap:8px; align-items:center; margin-bottom:8px; }
 .part-row .part-nombre { flex:1 1 auto; width:auto; min-width:0; }
 .part-row .part-rol { flex:0 0 150px; width:150px; }

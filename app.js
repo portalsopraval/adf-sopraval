@@ -1076,6 +1076,10 @@ function renderAnalisisZone(){
         ${an.causas.map((c,i)=>causaRowHTML(c,i)).join('')}
       </div>
       <button class="btn-ghost btn-sm" onclick="agregarCausa()">+ Agregar causa</button>
+      <div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap">
+        <button class="btn-blue btn-sm" onclick="generarSintesis()">🔎 Generar análisis de causas seleccionadas</button>
+      </div>
+      <div id="sintesis-zone">${an.sintesis?sintesisHTML(an.sintesis):''}</div>
     </div>
 
     <div class="card">
@@ -1113,7 +1117,12 @@ function planRowHTML(pl,i){
       <option ${pl.tipo==='INMEDIATA'?'selected':''}>INMEDIATA</option>
       <option ${pl.tipo==='PERMANENTE'?'selected':''}>PERMANENTE</option>
     </select>
+    <button type="button" class="plan-del" onclick="quitarPlan(${i})" title="Eliminar actividad">✕</button>
   </div>`;
+}
+function quitarPlan(i){
+  _wizard.analisis.planes.splice(i,1);
+  $('plan-list').innerHTML = _wizard.analisis.planes.map((pl,j)=>planRowHTML(pl,j)).join('');
 }
 
 // Participantes en la atención de la falla (aparte del que ingresa el ADF)
@@ -1183,6 +1192,62 @@ function agregarCausa(){
   $('causa-list').insertAdjacentHTML('beforeend', causaRowHTML(_wizard.analisis.causas[i], i));
 }
 function editCausa(i,v){ _wizard.analisis.causas[i].txt=v; }
+
+// Genera un análisis posterior (síntesis) a partir de las causas MARCADAS como probables
+function generarSintesis(){
+  const an = _wizard.analisis;
+  const sel = (an.causas||[]).filter(c=>c.probable && String(c.txt).trim());
+  if(!sel.length){ toast('Marca al menos una causa probable para generar el análisis.','err'); return; }
+
+  // Distribución por 6M y por origen
+  const por6M = {}, porOrigen = {};
+  sel.forEach(c=>{
+    const k = c.cat || 'Máquina';   por6M[k] = (por6M[k]||0)+1;
+    const o = c.origen || an.modoDetectado; porOrigen[o] = (porOrigen[o]||0)+1;
+  });
+  const top = obj => Object.entries(obj).sort((a,b)=>b[1]-a[1]);
+  const dom6M = top(por6M)[0];
+  const domOri = top(porOrigen);
+
+  const s = {
+    n: sel.length,
+    causas: sel.map(c=>c.txt),
+    por6M: top(por6M),
+    porOrigen: domOri,
+    foco: dom6M[0],
+    conclusion: `La falla por "${an.modoDetectado}" concentra ${dom6M[1]} de ${sel.length} causas seleccionadas en la dimensión `+
+      `6M "${dom6M[0]}"${domOri.length>1?`, con origen mixto (${domOri.map(o=>o[0]).join(' · ')})`:`, con origen en "${domOri[0][0]}"`}. `+
+      `Se recomienda priorizar las acciones PERMANENTES sobre la dimensión "${dom6M[0]}" para atacar la causa raíz.`,
+  };
+  an.sintesis = s;
+  $('sintesis-zone').innerHTML = sintesisHTML(s);
+  toast('Análisis de causas seleccionadas generado.','ok');
+}
+
+// Render de la síntesis de causas seleccionadas
+function sintesisHTML(s){
+  const barras = s.por6M.map(([k,n])=>{
+    const pct = Math.round(n/s.n*100);
+    return `<div class="sx-bar"><span class="sx-lbl">${esc(k)}</span>
+      <span class="sx-track"><span class="sx-fill" style="width:${pct}%"></span></span>
+      <span class="sx-val">${n}</span></div>`;
+  }).join('');
+  return `<div class="sintesis-box">
+    <div class="sx-title">📊 Análisis de las ${s.n} causas seleccionadas</div>
+    <div class="sx-grid">
+      <div>
+        <div class="sx-sub">Distribución 6M (Ishikawa)</div>
+        ${barras}
+      </div>
+      <div>
+        <div class="sx-sub">Orígenes de falla involucrados</div>
+        ${s.porOrigen.map(([o,n])=>`<div class="sx-ori"><span class="origen-tag">${esc(o)}</span> <b>${n}</b></div>`).join('')}
+        <div class="sx-foco">Foco principal: <b>${esc(s.foco)}</b></div>
+      </div>
+    </div>
+    <p class="sx-concl">${esc(s.conclusion)}</p>
+  </div>`;
+}
 function editPorque(i,v){ _wizard.analisis.porques[i]=v; }
 function editPlan(i,f,v){ _wizard.analisis.planes[i][f]=v; }
 function agregarPlan(){ _wizard.analisis.planes.push({actividad:'',tipo:'PERMANENTE',responsable:'',fecha:''});
@@ -1786,7 +1851,8 @@ function abrirADF(id){
 
     <div class="section-head"><h3>4 · Causas probables ${a.analisis?`<small class="muted">(${esc(a.analisis.modoDetectado)})</small>`:''}</h3></div>
     <div class="causa-list">${(a.analisis?.causas||[]).map((c,i)=>
-      `<div class="causa-item ${c.probable?'probable':''}"><span class="c-num">${i+1}</span><span class="c-txt">${esc(c.txt)} ${c.cat?`<span class="cat-tag">${esc(c.cat)}</span>`:''} ${c.probable?'<b style="color:var(--orange-dk)"> ← probable</b>':''}</span></div>`).join('')}</div>
+      `<div class="causa-item ${c.probable?'probable':''}"><span class="c-num">${i+1}</span><span class="c-txt">${esc(c.txt)} ${c.cat?`<span class="cat-tag">${esc(c.cat)}</span>`:''} ${c.origen?`<span class="origen-tag">${esc(c.origen)}</span>`:''} ${c.probable?'<b style="color:var(--orange-dk)"> ← probable</b>':''}</span></div>`).join('')}</div>
+    ${a.analisis?.sintesis?sintesisHTML(a.analisis.sintesis):''}
 
     <div class="section-head"><h3>5 · 5 Porqués</h3></div>
     <div class="porque-chain">${(a.analisis?.porques||[]).map((p,i)=>

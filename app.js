@@ -681,14 +681,14 @@ function tablaADF(list){
    ═══════════════════════════════════════════════════════════ */
 function nuevoBorrador(){
   return {
-    fecha:new Date().toISOString().slice(0,10), area:'', folio:'', linea:'', equipo:'', codSap:'',
+    fecha:new Date().toISOString().slice(0,10), area:'', folio:'', linea:'', equipo:'', codSap:'', componente:'',
     fechaInicio:'', horaInicio:'', fechaMarcha:'', horaMarcha:'', minutosPerdidos:'',
     ot:'', afectoProduccion:'No', tipoProblema:'Esporádico',
     sintoma:'', modoFalla:'', accionCorrectiva:'',
-    participantes:[{n:'',a:''}],
+    participantes:[],
     w_que:'', w_cuando:'', w_donde:'', w_quien:'', w_cual:'', w_como:'',
     imagen:'',
-    condiciones:{ estado:'', turno:'', pmVencido:'No', intervencion:'No', intervencionDet:'', fueraParam:'No', fueraParamDet:'' },
+    condiciones:{ estado:'', estadoOtro:'', turno:'', pmVencido:'No', intervencion:'No', intervencionDet:'', fueraParam:'No', fueraParamDet:'' },
     analisis:null,
   };
 }
@@ -741,11 +741,21 @@ function renderNuevo(){
           </div>
           <button type="button" id="maq-clear" class="maq-clear-btn">✕ Limpiar</button>
         </div>
+        <div class="field" style="margin-top:10px">
+          <label>Componente afectado <small style="color:var(--gray)">(opcional — permite analizar qué componentes fallan más)</small></label>
+          <input id="f-componente" value="${esc(w.componente||'')}" placeholder="Ej: rodamiento lado motor, correa, sensor inductivo, sello...">
+        </div>
       </div>
       <input type="hidden" id="f-area" value="${esc(w.area)}">
       <input type="hidden" id="f-linea" value="${esc(w.linea)}">
       <input type="hidden" id="f-equipo" value="${esc(w.equipo)}">
       <input type="hidden" id="f-sap" value="${esc(w.codSap)}">
+
+      <div class="field" style="margin-top:6px">
+        <label>👥 Participantes en la atención de la falla <small style="color:var(--gray);font-weight:400">(opcional — supervisor y técnicos que repararon)</small></label>
+        <div id="part-list">${(w.participantes||[]).map((p,i)=>partRowHTML(p,i)).join('')}</div>
+        <button type="button" class="btn-ghost btn-sm" onclick="agregarParticipante()">+ Agregar participante</button>
+      </div>
     </div>
 
     <div class="card">
@@ -774,10 +784,14 @@ function renderNuevo(){
           </select></div>
         <div class="field"><label>Turno</label>
           <select id="c-turno"><option value="">— Turno —</option>
-            ${['A','B','C','Administrativo'].map(o=>`<option ${co.turno===o?'selected':''}>${o}</option>`).join('')}
+            ${['Día','Noche'].map(o=>`<option ${co.turno===o?'selected':''}>${o}</option>`).join('')}
           </select></div>
         <div class="field"><label>¿Plan PM vencido?</label>
           <select id="c-pm">${['No','Sí','No aplica'].map(o=>`<option ${co.pmVencido===o?'selected':''}>${o}</option>`).join('')}</select></div>
+        <div class="field" id="c-estado-otro-wrap" style="grid-column:span 3;display:${co.estado==='Otro'?'block':'none'}">
+          <label>Describe en qué condición estaba la máquina <small style="color:var(--gray)">(al elegir "Otro")</small></label>
+          <input id="c-estado-otro" value="${esc(co.estadoOtro||'')}" placeholder="Ej: en lavado CIP, en vacío sin carga, en pruebas de puesta a punto...">
+        </div>
         <div class="field"><label>¿Intervención reciente en el equipo?</label>
           <select id="c-int">${['No','Sí'].map(o=>`<option ${co.intervencion===o?'selected':''}>${o}</option>`).join('')}</select></div>
         <div class="field" style="grid-column:span 2"><label>¿Qué intervención? (si aplica)</label><input id="c-int-det" value="${esc(co.intervencionDet||'')}" placeholder="Ej: cambio de rodamiento hace 2 días"></div>
@@ -791,11 +805,11 @@ function renderNuevo(){
       <div class="card-title">3 · Descripción del Fenómeno (5W + 1H)</div>
       <div class="grid-2">
         <div class="field"><label>¿Qué? (fenómeno)</label><textarea id="f-que">${esc(w.w_que)}</textarea></div>
-        <div class="field"><label>¿Cuándo?</label><textarea id="f-cuando">${esc(w.w_cuando)}</textarea></div>
+        <div class="field"><label>¿Cómo?</label><textarea id="f-como">${esc(w.w_como)}</textarea></div>
         <div class="field"><label>¿Dónde?</label><textarea id="f-donde">${esc(w.w_donde)}</textarea></div>
+        <div class="field"><label>¿Cuándo?</label><textarea id="f-cuando">${esc(w.w_cuando)}</textarea></div>
         <div class="field"><label>¿Quién?</label><textarea id="f-quien">${esc(w.w_quien)}</textarea></div>
         <div class="field"><label>¿Cuál?</label><textarea id="f-cual">${esc(w.w_cual)}</textarea></div>
-        <div class="field"><label>¿Cómo?</label><textarea id="f-como">${esc(w.w_como)}</textarea></div>
       </div>
       <div class="field"><label>Imagen de la falla (opcional)</label>
         <div class="img-drop" onclick="document.getElementById('f-img').click()">📷 Clic para adjuntar imagen</div>
@@ -818,12 +832,15 @@ function renderNuevo(){
 
   // listeners de captura
   const cap = ()=>capturarWizard();
-  ['f-fecha','f-folio','f-finicio','f-hinicio','f-min',
+  ['f-fecha','f-folio','f-componente','f-finicio','f-hinicio','f-min',
    'f-fmarcha','f-hmarcha','f-ot','f-afecto','f-tipo','f-sintoma','f-modo','f-accion',
-   'c-estado','c-turno','c-pm','c-int','c-int-det','c-fp','c-fp-det',
+   'c-estado','c-estado-otro','c-turno','c-pm','c-int','c-int-det','c-fp','c-fp-det',
    'f-que','f-cuando','f-donde','f-quien','f-cual','f-como'].forEach(id=>{
     const el=$(id); if(el) el.addEventListener('change', cap);
   });
+  // Muestra el campo de texto "Otro" solo cuando se elige esa condición
+  const elEst=$('c-estado');
+  if(elEst) elEst.addEventListener('change', ()=>{ const wrap=$('c-estado-otro-wrap'); if(wrap) wrap.style.display = elEst.value==='Otro'?'block':'none'; });
   $('f-img').addEventListener('change', async e=>{
     const file=e.target.files[0]; if(!file) return;
     _wizard.imagen = await comprimirImg(file);
@@ -957,7 +974,7 @@ function capturarWizard(){
   const g=(id)=> { const e=$(id); return e?e.value:''; };
   Object.assign(_wizard,{
     fecha:g('f-fecha'), area:g('f-area'), folio:g('f-folio'), linea:g('f-linea'),
-    equipo:g('f-equipo'), codSap:g('f-sap'), fechaInicio:g('f-finicio'), horaInicio:g('f-hinicio'),
+    equipo:g('f-equipo'), codSap:g('f-sap'), componente:g('f-componente'), fechaInicio:g('f-finicio'), horaInicio:g('f-hinicio'),
     minutosPerdidos:g('f-min'), fechaMarcha:g('f-fmarcha'), horaMarcha:g('f-hmarcha'), ot:g('f-ot'),
     afectoProduccion:g('f-afecto'), tipoProblema:g('f-tipo'), sintoma:g('f-sintoma'),
     modoFalla:g('f-modo'), accionCorrectiva:g('f-accion'),
@@ -966,7 +983,7 @@ function capturarWizard(){
   });
   if($('c-estado')){
     _wizard.condiciones = {
-      estado:g('c-estado'), turno:g('c-turno'), pmVencido:g('c-pm'),
+      estado:g('c-estado'), estadoOtro:g('c-estado-otro'), turno:g('c-turno'), pmVencido:g('c-pm'),
       intervencion:g('c-int'), intervencionDet:g('c-int-det'),
       fueraParam:g('c-fp'), fueraParamDet:g('c-fp-det'),
     };
@@ -1034,6 +1051,28 @@ function planRowHTML(pl,i){
       <option ${pl.tipo==='PERMANENTE'?'selected':''}>PERMANENTE</option>
     </select>
   </div>`;
+}
+
+// Participantes en la atención de la falla (aparte del que ingresa el ADF)
+function partRowHTML(p,i){
+  return `<div class="part-row" id="part-${i}">
+    <input class="part-nombre" value="${esc(p.nombre||'')}" placeholder="Nombre y apellido" onchange="editParticipante(${i},'nombre',this.value)">
+    <select class="part-rol" onchange="editParticipante(${i},'rol',this.value)">
+      ${['Técnico','Supervisor','Operador','Externo','Otro'].map(o=>`<option ${(p.rol||'Técnico')===o?'selected':''}>${o}</option>`).join('')}
+    </select>
+    <button type="button" class="part-del" onclick="quitarParticipante(${i})" title="Quitar">✕</button>
+  </div>`;
+}
+function agregarParticipante(){
+  if(!_wizard.participantes) _wizard.participantes=[];
+  _wizard.participantes.push({nombre:'',rol:'Técnico'});
+  const i=_wizard.participantes.length-1;
+  $('part-list').insertAdjacentHTML('beforeend', partRowHTML(_wizard.participantes[i], i));
+}
+function editParticipante(i,f,v){ _wizard.participantes[i][f]=v; }
+function quitarParticipante(i){
+  _wizard.participantes.splice(i,1);
+  $('part-list').innerHTML = _wizard.participantes.map((p,j)=>partRowHTML(p,j)).join('');
 }
 
 // Fila de causa: checkbox (varias probables) + texto + categoría 6M
@@ -1533,11 +1572,14 @@ function exportarIndicadoresExcel(data, m, ex){
   m.equipos.forEach(e=>porEquipo.push([ e.equipo, e.sap||'', e.area, e.nFallas, e.nConDatos,
     fnum(e.mttr), fnum(e.mtbf), e.disp!=null?Math.round(e.disp*10)/10:'', fnum(e.horasDetenido) ]));
 
-  const detalle = [['Folio','Fecha','Área','Línea','Equipo','Cód. SAP','OT','Inicio falla','Marcha','Min. perdidos','Tipo','Modo de falla','Síntoma','Estado','T. reparación (h)']];
-  data.forEach(a=>detalle.push([ a.folio||'', a.fecha||'', a.area||'', a.linea||'', a.equipo||'', a.codSap||'',
+  const detalle = [['Folio','Fecha','Área','Línea','Equipo','Cód. SAP','Componente','OT','Inicio falla','Marcha','Min. perdidos','Tipo','Modo de falla','Síntoma','Causas probables (6M)','Participantes','Estado','T. reparación (h)']];
+  data.forEach(a=>detalle.push([ a.folio||'', a.fecha||'', a.area||'', a.linea||'', a.equipo||'', a.codSap||'', a.componente||'',
     a.ot||'', (a.fechaInicio||'')+' '+(a.horaInicio||''), (a.fechaMarcha||'')+' '+(a.horaMarcha||''),
     a.minutosPerdidos||'', a.tipoProblema||'', a.analisis?.modoDetectado || a.modoFalla || '',
-    (a.sintoma||'').slice(0,120), a.estado||'', fnum(downtimeHoras(a)) ]));
+    (a.sintoma||'').slice(0,120),
+    (a.analisis?.causas||[]).filter(c=>c.probable).map(c=>`${c.txt} (${c.cat||'—'})`).join(' | '),
+    (a.participantes||[]).filter(p=>p.nombre).map(p=>`${p.nombre} (${p.rol||''})`).join(' | '),
+    a.estado||'', fnum(downtimeHoras(a)) ]));
 
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(resumen),   'Resumen');
@@ -1629,7 +1671,9 @@ function abrirADF(id){
     <div class="grid-3">
       <div><b>Fecha:</b> ${fmtD(a.fecha)}</div><div><b>Área:</b> ${esc(a.area)}</div><div><b>Línea:</b> ${esc(a.linea||'—')}</div>
       <div><b>Equipo:</b> ${esc(a.equipo)}</div><div><b>Cód. SAP:</b> ${esc(a.codSap||'—')}</div><div><b>OT:</b> ${esc(a.ot||'—')}</div>
+      <div><b>Componente:</b> ${esc(a.componente||'—')}</div>
     </div>
+    <p style="margin-top:8px;font-size:.88rem"><b>👥 Participantes:</b> ${(a.participantes&&a.participantes.length)?a.participantes.filter(p=>p.nombre).map(p=>`${esc(p.nombre)} <span class="cat-tag">${esc(p.rol||'')}</span>`).join(' · ')||'—':'—'}</p>
 
     <div class="section-head"><h3>2 · Avería</h3></div>
     <p><b>Síntoma:</b> ${esc(a.sintoma||'—')}</p>
@@ -1637,7 +1681,7 @@ function abrirADF(id){
     <p><b>Acción correctiva:</b> ${esc(a.accionCorrectiva||'—')}</p>
     <p><b>Min. perdidos:</b> ${esc(a.minutosPerdidos||'0')} · <b>¿Afectó producción?:</b> ${esc(a.afectoProduccion)}</p>
     ${a.condiciones?`<div class="grid-3" style="font-size:.85rem;background:var(--gray-lt);padding:10px 12px;border-radius:8px;margin-top:6px">
-      <div><b>Estado al fallar:</b> ${esc(a.condiciones.estado||'—')}</div>
+      <div><b>Estado al fallar:</b> ${esc(a.condiciones.estado||'—')}${a.condiciones.estado==='Otro'&&a.condiciones.estadoOtro?' — '+esc(a.condiciones.estadoOtro):''}</div>
       <div><b>Turno:</b> ${esc(a.condiciones.turno||'—')}</div>
       <div><b>PM vencido:</b> ${esc(a.condiciones.pmVencido||'—')}</div>
       <div><b>Intervención reciente:</b> ${esc(a.condiciones.intervencion||'—')}${a.condiciones.intervencionDet?' — '+esc(a.condiciones.intervencionDet):''}</div>

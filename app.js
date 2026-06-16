@@ -592,6 +592,56 @@ function modosRelacionados(id){
   return [...set];
 }
 
+// Tipos de equipo: según el nombre del Equipo/Componente se priorizan los modos
+// de falla típicos de ese activo y se inyectan sus causas características.
+const EQUIPOS_TIPO = [
+  { id:'bomba', nombre:'Bomba', keys:['bomba','bba','pump','centrifuga','impuls','recircula'],
+    modos:['bajo_rendimiento','fuga','rodamiento','desalineacion','sobrecalentamiento','lubricacion'],
+    causas:['Cavitación por baja presión de succión','Desgaste del impulsor/rodete',
+      'Sello mecánico desgastado (fuga)','Filtro de succión obstruido','Aire en la succión'] },
+  { id:'motor', nombre:'Motor eléctrico', keys:['motor','electromotor'],
+    modos:['electrica','sobrecalentamiento','rodamiento','vibracion','desalineacion'],
+    causas:['Bobinado quemado / aislación deteriorada','Rodamiento del motor dañado',
+      'Sobrecarga eléctrica (corriente alta)','Falla de aislación a tierra','Ventilación del motor obstruida'] },
+  { id:'valvula', nombre:'Válvula', keys:['valvula','actuador de valvula','globo','mariposa','compuerta'],
+    modos:['fuga_interna','fuga','atasco','corrosion','neumatica_hidraulica'],
+    causas:['Asiento de válvula desgastado (no sella)','Actuador neumático con falla',
+      'Vástago agarrotado','Empaquetadura con fuga'] },
+  { id:'compresor', nombre:'Compresor', keys:['compresor','compres'],
+    modos:['sobrecalentamiento','fuga','bajo_rendimiento','vibracion','lubricacion','rodamiento'],
+    causas:['Válvulas de compresión desgastadas','Bajo nivel / calidad de aceite',
+      'Filtro de aspiración obstruido','Fuga en línea de descarga'] },
+  { id:'reductor', nombre:'Reductor / Caja de engranajes', keys:['reductor','caja reductora','gearbox','engranaj'],
+    modos:['transmision','lubricacion','rodamiento','sobrecalentamiento','vibracion'],
+    causas:['Diente de engranaje picado o roto','Nivel / estado de aceite del reductor',
+      'Rodamiento interno dañado','Sobrecarga del reductor'] },
+  { id:'transportador', nombre:'Transportador / Cinta', keys:['transportador','cinta','correa transport','sinfin','sin fin','tornillo transport','elevador','redler','noria','rosca'],
+    modos:['transmision','atasco','rotura','desalineacion','rodamiento'],
+    causas:['Cinta / banda descentrada o rota','Atasco por acumulación de material',
+      'Rodillo / polín trabado','Cadena del transportador desgastada'] },
+  { id:'ventilador', nombre:'Ventilador / Soplador', keys:['ventilador','soplador','extractor','blower'],
+    modos:['vibracion','desalineacion','rodamiento','sobrecalentamiento'],
+    causas:['Desbalanceo del rotor / aspas','Acumulación de material en aspas','Rodamiento del ventilador dañado'] },
+  { id:'intercambiador', nombre:'Intercambiador / Chiller', keys:['intercambiador','chiller','condensador','evaporador','enfriador','radiador','serpentin'],
+    modos:['incrustacion','fuga','corrosion','bajo_rendimiento'],
+    causas:['Incrustación / fouling en placas o tubos','Fuga de refrigerante',
+      'Suciedad que reduce el intercambio térmico','Corrosión de tubos'] },
+  { id:'tablero', nombre:'Tablero / Control eléctrico', keys:['tablero','variador','vfd','ccm','partidor','contactor'],
+    modos:['electrica','control_automatizacion','instrumentacion','erratico'],
+    causas:['Componente de control quemado (relé / contactor)','Sobretemperatura del tablero',
+      'Falla de comunicación','Borne / conexión floja'] },
+  { id:'estanque', nombre:'Estanque / Tanque / Silo', keys:['estanque','tanque','silo','tolva','deposito'],
+    modos:['corrosion','fuga','atasco','estructural'],
+    causas:['Corrosión de pared o fondo','Fuga por soldadura / unión',
+      'Material adherido / apelmazado','Fisura estructural'] },
+];
+// Detecta el/los tipos de equipo a partir del Equipo y Componente
+function tiposEquipo(adf){
+  const t = norm([adf.equipo, adf.componente].join(' '));
+  if(!t.trim()) return [];
+  return EQUIPOS_TIPO.filter(e=> e.keys.some(k=> t.includes(norm(k))));
+}
+
 // Detecta TODOS los modos de falla que coinciden con el texto (ordenados por puntaje).
 // `textoFuerte` (síntoma + modo de falla) pesa el doble para afinar el modo principal.
 function detectarModos(texto, textoFuerte){
@@ -621,7 +671,23 @@ function generarAnalisis(adf){
   const texto  = [adf.sintoma, adf.modoFalla, adf.w_que, adf.w_como, adf.w_cual, adf.accionCorrectiva].join(' ');
   const fuerte = [adf.sintoma, adf.modoFalla].join(' '); // pesa el doble en la detección
   const hits = detectarModos(texto, fuerte);
-  const primary = hits.length ? hits[0].modo : GENERICO;
+
+  // Inferencia por tipo de equipo/componente
+  const tipos = tiposEquipo(adf);
+  const tipoModoIds = new Set();
+  tipos.forEach(tp=> tp.modos.forEach(id=> tipoModoIds.add(id)));
+  // Bonus de puntaje a los modos propios del tipo de equipo y re-orden
+  if(tipoModoIds.size){
+    hits.forEach(h=>{ if(tipoModoIds.has(h.modo.id)) h.score += 2; });
+    hits.sort((a,b)=> b.score - a.score);
+  }
+
+  // Modo principal: el mejor del texto; si no hubo coincidencia pero sí tipo de equipo,
+  // se usa el primer modo típico de ese equipo en vez de "Análisis general".
+  let primary;
+  if(hits.length) primary = hits[0].modo;
+  else if(tipoModoIds.size) primary = CATALOGO.find(m=> m.id===[...tipoModoIds][0]) || GENERICO;
+  else primary = GENERICO;
   const primaryId = primary.id || '';
 
   const causas = [];
@@ -635,8 +701,16 @@ function generarAnalisis(adf){
 
   // 1) Causas del modo principal (la sugerida queda marcada como probable)
   primary.causas.forEach((c,i)=> push(c, i===primary.probable, primary.nombre));
+  // 1b) Causas características del tipo de equipo (alta relevancia)
+  tipos.forEach(tp=> (tp.causas||[]).forEach(c=> push(c, false, 'Equipo: '+tp.nombre)));
   // 2) Causas de los demás modos detectados en el texto (causas mixtas)
   hits.slice(1).forEach(({modo})=> modo.causas.slice(0,6).forEach(c=> push(c, false, modo.nombre)));
+  // 2b) Causas de los modos típicos del equipo aunque no salieran en el texto
+  tipoModoIds.forEach(id=>{
+    if(id===primaryId || hits.some(h=>h.modo.id===id)) return;
+    const m = CATALOGO.find(x=>x.id===id);
+    if(m) m.causas.slice(0,4).forEach(c=> push(c, false, m.nombre));
+  });
   // 3) Causas de modos que comparten origen aunque no hayan aparecido en el texto
   modosRelacionados(primaryId).forEach(id=>{
     if(hits.some(h=>h.modo.id===id)) return; // ya incluido arriba
@@ -647,13 +721,14 @@ function generarAnalisis(adf){
   GENERICO.causas.forEach(c=> push(c, false, 'General'));
 
   // Tope para no saturar la lista (las más relevantes quedan primero)
-  const MAX_CAUSAS = 28;
+  const MAX_CAUSAS = 30;
   const causasFinal = causas.slice(0, MAX_CAUSAS);
 
   // Orígenes adicionales realmente presentes en las causas (excluye el principal)
   const otros = [...new Set(causasFinal.map(c=>c.origen))].filter(o=> o && o!==primary.nombre);
   return {
     modoDetectado: primary.nombre,
+    tipoEquipo: tipos.map(t=>t.nombre),
     modosMixtos: otros,
     causas: causasFinal,
     porques: (primary.porques || GENERICO.porques).slice(),
@@ -1214,7 +1289,7 @@ function renderAnalisisZone(){
   const an=_wizard.analisis;
   $('analisis-zone').innerHTML = `
     <div class="section-head"><h3>Análisis propuesto — modo detectado: ${esc(an.modoDetectado)}</h3>
-      <p>Revisa y ajusta. Marca todas las causas probables.${(an.modosMixtos&&an.modosMixtos.length)?` <b>Causas mixtas por origen:</b> ${esc(an.modosMixtos.join(' · '))}.`:''}</p></div>
+      <p>${(an.tipoEquipo&&an.tipoEquipo.length)?`<b>Tipo de equipo:</b> ${esc(an.tipoEquipo.join(' · '))} · `:''}Revisa y ajusta. Marca todas las causas probables.${(an.modosMixtos&&an.modosMixtos.length)?` <b>Causas mixtas por origen:</b> ${esc(an.modosMixtos.join(' · '))}.`:''}</p></div>
 
     <div class="card">
       <div class="card-title">4 · Causas Probables (marca todas las que apliquen)</div>
@@ -2050,7 +2125,7 @@ function abrirADF(id){
     </div>
     ${a.imagen?`<img class="img-preview" src="${a.imagen}" style="margin-top:10px;max-width:280px">`:''}
 
-    <div class="section-head"><h3>4 · Causas probables ${a.analisis?`<small class="muted">(${esc(a.analisis.modoDetectado)})</small>`:''}</h3></div>
+    <div class="section-head"><h3>4 · Causas probables ${a.analisis?`<small class="muted">(${esc(a.analisis.modoDetectado)}${(a.analisis.tipoEquipo&&a.analisis.tipoEquipo.length)?' · '+esc(a.analisis.tipoEquipo.join(' · ')):''})</small>`:''}</h3></div>
     <div class="causa-list">${(a.analisis?.causas||[]).map((c,i)=>
       `<div class="causa-item ${c.probable?'probable':''}"><span class="c-num">${i+1}</span><span class="c-txt">${esc(c.txt)} ${c.cat?`<span class="cat-tag">${esc(c.cat)}</span>`:''} ${c.origen?`<span class="origen-tag">${esc(c.origen)}</span>`:''} ${c.probable?'<b style="color:var(--orange-dk)"> ← probable</b>':''}</span></div>`).join('')}</div>
     ${a.analisis?.sintesis?sintesisHTML(a.analisis.sintesis):''}

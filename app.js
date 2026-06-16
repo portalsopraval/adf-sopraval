@@ -424,6 +424,20 @@ const GENERICO = {
     {a:'Estandarizar el procedimiento y capacitar al personal',t:'PERMANENTE'}],
 };
 
+// Categorías 6M (Ishikawa) para clasificar cada causa
+const CATS_6M = ['Máquina','Mano de obra','Método','Material','Medición','Medio ambiente'];
+// Asigna una categoría 6M sugerida según el texto de la causa (editable luego)
+function categoria6M(txt){
+  const t = String(txt||'').toLowerCase();
+  const has = (...ks)=> ks.some(k=>t.includes(k));
+  if(has('sensor','calibr','medici','señal','transmisor','medida','lectura')) return 'Medición';
+  if(has('humedad','salino','ambient','temperatura','corros','cuerpo extra','sarro','incrusta','agua')) return 'Medio ambiente';
+  if(has('operacional','operador','capacit','manipula','error humano','maniobra','mala operac')) return 'Mano de obra';
+  if(has('procedimiento','preventiv','inspecc','mantenimiento','limpieza','lubrica','estándar','estandar','plan de','antigüedad','antiguedad')) return 'Método';
+  if(has('repuesto','material','junta','empaquet','recubrim','sello','retén','reten','fusible','inadecuado','diseño','diseno')) return 'Material';
+  return 'Máquina';
+}
+
 // Detecta el mejor modo de falla según texto libre
 function detectarModo(texto){
   const t = String(texto||'').toLowerCase();
@@ -442,7 +456,7 @@ function generarAnalisis(adf){
   const modo = detectarModo(texto);
   return {
     modoDetectado: modo.nombre,
-    causas: modo.causas.map((c,i)=>({ txt:c, probable: i===modo.probable })),
+    causas: modo.causas.map((c,i)=>({ txt:c, probable: i===modo.probable, cat: categoria6M(c) })),
     porques: modo.porques.slice(),
     planes: modo.acciones.map(a=>({ actividad:a.a, tipo:a.t, responsable:'', fecha:'' })),
   };
@@ -674,6 +688,7 @@ function nuevoBorrador(){
     participantes:[{n:'',a:''}],
     w_que:'', w_cuando:'', w_donde:'', w_quien:'', w_cual:'', w_como:'',
     imagen:'',
+    condiciones:{ estado:'', turno:'', pmVencido:'No', intervencion:'No', intervencionDet:'', fueraParam:'No', fueraParamDet:'' },
     analisis:null,
   };
 }
@@ -681,6 +696,7 @@ function nuevoBorrador(){
 function renderNuevo(){
   if(!_wizard) _wizard = nuevoBorrador();
   const w=_wizard;
+  const co = w.condiciones || {};
   $('pane-nuevo').innerHTML = `
     <div class="page-title">➕ Nuevo Análisis de Falla</div>
     <div class="page-sub">Ingresa lo que observaste. El análisis de causa raíz se propone automáticamente.</div>
@@ -749,6 +765,28 @@ function renderNuevo(){
       <div class="field"><label>Acción correctiva aplicada</label><textarea id="f-accion" placeholder="¿Qué se hizo para restablecer?">${esc(w.accionCorrectiva)}</textarea></div>
     </div>
 
+    <div class="card cond-card">
+      <div class="card-title">🔎 Condiciones al momento de la falla <small style="color:var(--gray);font-weight:400">— ayudan a identificar la causa</small></div>
+      <div class="grid-3">
+        <div class="field"><label>Estado del equipo al fallar</label>
+          <select id="c-estado"><option value="">— Seleccionar —</option>
+            ${['Marcha normal','Arranque','Parada / detención','En mantención','Cambio de formato','Otro'].map(o=>`<option ${co.estado===o?'selected':''}>${o}</option>`).join('')}
+          </select></div>
+        <div class="field"><label>Turno</label>
+          <select id="c-turno"><option value="">— Turno —</option>
+            ${['A','B','C','Administrativo'].map(o=>`<option ${co.turno===o?'selected':''}>${o}</option>`).join('')}
+          </select></div>
+        <div class="field"><label>¿Plan PM vencido?</label>
+          <select id="c-pm">${['No','Sí','No aplica'].map(o=>`<option ${co.pmVencido===o?'selected':''}>${o}</option>`).join('')}</select></div>
+        <div class="field"><label>¿Intervención reciente en el equipo?</label>
+          <select id="c-int">${['No','Sí'].map(o=>`<option ${co.intervencion===o?'selected':''}>${o}</option>`).join('')}</select></div>
+        <div class="field" style="grid-column:span 2"><label>¿Qué intervención? (si aplica)</label><input id="c-int-det" value="${esc(co.intervencionDet||'')}" placeholder="Ej: cambio de rodamiento hace 2 días"></div>
+        <div class="field"><label>¿Operando fuera de parámetro?</label>
+          <select id="c-fp">${['No','Sí'].map(o=>`<option ${co.fueraParam===o?'selected':''}>${o}</option>`).join('')}</select></div>
+        <div class="field" style="grid-column:span 2"><label>¿Qué parámetro? (si aplica)</label><input id="c-fp-det" value="${esc(co.fueraParamDet||'')}" placeholder="Ej: presión 8 bar sobre el límite de 6 bar"></div>
+      </div>
+    </div>
+
     <div class="card">
       <div class="card-title">3 · Descripción del Fenómeno (5W + 1H)</div>
       <div class="grid-2">
@@ -782,6 +820,7 @@ function renderNuevo(){
   const cap = ()=>capturarWizard();
   ['f-fecha','f-folio','f-finicio','f-hinicio','f-min',
    'f-fmarcha','f-hmarcha','f-ot','f-afecto','f-tipo','f-sintoma','f-modo','f-accion',
+   'c-estado','c-turno','c-pm','c-int','c-int-det','c-fp','c-fp-det',
    'f-que','f-cuando','f-donde','f-quien','f-cual','f-como'].forEach(id=>{
     const el=$(id); if(el) el.addEventListener('change', cap);
   });
@@ -925,6 +964,13 @@ function capturarWizard(){
     w_que:g('f-que'), w_cuando:g('f-cuando'), w_donde:g('f-donde'), w_quien:g('f-quien'),
     w_cual:g('f-cual'), w_como:g('f-como'),
   });
+  if($('c-estado')){
+    _wizard.condiciones = {
+      estado:g('c-estado'), turno:g('c-turno'), pmVencido:g('c-pm'),
+      intervencion:g('c-int'), intervencionDet:g('c-int-det'),
+      fueraParam:g('c-fp'), fueraParamDet:g('c-fp-det'),
+    };
+  }
 }
 
 function hacerAnalisis(){
@@ -944,19 +990,16 @@ function renderAnalisisZone(){
       <p>Revisa y ajusta. Marca la causa más probable.</p></div>
 
     <div class="card">
-      <div class="card-title">4 · Causas Más Probables (lluvia de ideas)</div>
+      <div class="card-title">4 · Causas Probables (marca todas las que apliquen)</div>
+      <p class="muted" style="margin:-4px 0 10px;font-size:.85rem">Puedes marcar <b>más de una</b> causa probable y clasificar cada una según las <b>6M</b> (Máquina · Mano de obra · Método · Material · Medición · Medio ambiente).</p>
       <div class="causa-list" id="causa-list">
-        ${an.causas.map((c,i)=>`
-          <label class="causa-item ${c.probable?'probable':''}" id="causa-${i}">
-            <input type="radio" name="causa-prob" ${c.probable?'checked':''} onchange="marcarProbable(${i})">
-            <span class="c-num">${i+1}</span>
-            <span class="c-txt"><textarea rows="1" onchange="editCausa(${i},this.value)">${esc(c.txt)}</textarea></span>
-          </label>`).join('')}
+        ${an.causas.map((c,i)=>causaRowHTML(c,i)).join('')}
       </div>
+      <button class="btn-ghost btn-sm" onclick="agregarCausa()">+ Agregar causa</button>
     </div>
 
     <div class="card">
-      <div class="card-title">5 · Análisis 5 Porqués (de la causa más probable)</div>
+      <div class="card-title">5 · Análisis 5 Porqués (profundiza la causa raíz)</div>
       <div class="porque-chain">
         ${an.porques.map((p,i)=>`
           <div class="porque-step">
@@ -993,9 +1036,27 @@ function planRowHTML(pl,i){
   </div>`;
 }
 
+// Fila de causa: checkbox (varias probables) + texto + categoría 6M
+function causaRowHTML(c,i){
+  return `<label class="causa-item ${c.probable?'probable':''}" id="causa-${i}">
+    <input type="checkbox" ${c.probable?'checked':''} onchange="toggleProbable(${i},this.checked)">
+    <span class="c-num">${i+1}</span>
+    <span class="c-txt"><textarea rows="1" onchange="editCausa(${i},this.value)">${esc(c.txt)}</textarea></span>
+    <select class="c-cat" onchange="editCausaCat(${i},this.value)" title="Categoría 6M (Ishikawa)">
+      ${CATS_6M.map(k=>`<option ${(c.cat||'Máquina')===k?'selected':''}>${k}</option>`).join('')}
+    </select>
+  </label>`;
+}
+
 // Editores in-place del análisis
-function marcarProbable(i){ _wizard.analisis.causas.forEach((c,j)=>c.probable=(j===i));
-  document.querySelectorAll('.causa-item').forEach((el,j)=>el.classList.toggle('probable',j===i)); }
+function toggleProbable(i,on){ _wizard.analisis.causas[i].probable=on;
+  document.getElementById('causa-'+i)?.classList.toggle('probable',on); }
+function editCausaCat(i,v){ _wizard.analisis.causas[i].cat=v; }
+function agregarCausa(){
+  _wizard.analisis.causas.push({txt:'',probable:true,cat:'Máquina'});
+  const i=_wizard.analisis.causas.length-1;
+  $('causa-list').insertAdjacentHTML('beforeend', causaRowHTML(_wizard.analisis.causas[i], i));
+}
 function editCausa(i,v){ _wizard.analisis.causas[i].txt=v; }
 function editPorque(i,v){ _wizard.analisis.porques[i]=v; }
 function editPlan(i,f,v){ _wizard.analisis.planes[i][f]=v; }
@@ -1313,6 +1374,7 @@ function renderConfiabilidad(){
         <div class="chart-card"><div class="chart-title">Tendencia mensual (fallas vs MTTR)</div><div class="chart-box"><canvas id="ch-tend"></canvas></div></div>
         <div class="chart-card"><div class="chart-title">Tipo de problema</div><div class="chart-box"><canvas id="ch-tipo"></canvas></div></div>
         <div class="chart-card"><div class="chart-title">Estado de los ADF</div><div class="chart-box"><canvas id="ch-estado"></canvas></div></div>
+        <div class="chart-card"><div class="chart-title">Causas por categoría 6M (Ishikawa)</div><div class="chart-box"><canvas id="ch-6m"></canvas></div></div>
         <div class="chart-card chart-wide"><div class="chart-title">Pareto de causas raíz — prioriza qué corregir primero</div><div class="chart-box"><canvas id="ch-pareto"></canvas></div></div>
       </div>
 
@@ -1338,14 +1400,14 @@ function renderConfiabilidad(){
   construirGraficos(data, m);
 }
 
-// Causa raíz = causa marcada como "más probable" en cada ADF
+// Causa raíz = TODAS las causas marcadas como probables en cada ADF
 function paretoCausas(data){
   const map = {};
   data.forEach(a=>{
-    const causas = a.analisis?.causas || [];
-    const prob = causas.find(c=>c.probable);
-    const txt = (prob?.txt || '').trim();
-    if(txt) map[txt] = (map[txt]||0)+1;
+    (a.analisis?.causas || []).filter(c=>c.probable).forEach(c=>{
+      const txt = (c.txt || '').trim();
+      if(txt) map[txt] = (map[txt]||0)+1;
+    });
   });
   const arr = Object.entries(map).map(([k,v])=>({k,v})).sort((a,b)=>b.v-a.v).slice(0,12);
   const total = arr.reduce((s,x)=>s+x.v,0);
@@ -1405,6 +1467,14 @@ function construirGraficos(data, m){
   mk('ch-estado', { type:'doughnut', data:{ labels:pe.map(x=>x.k),
     datasets:[{ data:pe.map(x=>x.v), backgroundColor:PALETA }] },
     options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom'}} } });
+
+  // Categoría 6M (Ishikawa) — sobre las causas marcadas como probables
+  const c6 = {};
+  data.forEach(a=>{ (a.analisis?.causas||[]).filter(c=>c.probable).forEach(c=>{ const k=c.cat||'Sin clasificar'; c6[k]=(c6[k]||0)+1; }); });
+  const c6arr = Object.entries(c6).map(([k,v])=>({k,v})).sort((a,b)=>b.v-a.v);
+  mk('ch-6m', { type:'bar', data:{ labels:c6arr.map(x=>x.k),
+    datasets:[{ data:c6arr.map(x=>x.v), backgroundColor:PALETA }] },
+    options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}} } });
 
   // Pareto de causas raíz: barras (frecuencia) + línea (% acumulado)
   const par = paretoCausas(data);
@@ -1566,6 +1636,13 @@ function abrirADF(id){
     <p><b>Modo de falla:</b> ${esc(a.modoFalla||'—')}</p>
     <p><b>Acción correctiva:</b> ${esc(a.accionCorrectiva||'—')}</p>
     <p><b>Min. perdidos:</b> ${esc(a.minutosPerdidos||'0')} · <b>¿Afectó producción?:</b> ${esc(a.afectoProduccion)}</p>
+    ${a.condiciones?`<div class="grid-3" style="font-size:.85rem;background:var(--gray-lt);padding:10px 12px;border-radius:8px;margin-top:6px">
+      <div><b>Estado al fallar:</b> ${esc(a.condiciones.estado||'—')}</div>
+      <div><b>Turno:</b> ${esc(a.condiciones.turno||'—')}</div>
+      <div><b>PM vencido:</b> ${esc(a.condiciones.pmVencido||'—')}</div>
+      <div><b>Intervención reciente:</b> ${esc(a.condiciones.intervencion||'—')}${a.condiciones.intervencionDet?' — '+esc(a.condiciones.intervencionDet):''}</div>
+      <div style="grid-column:span 2"><b>Fuera de parámetro:</b> ${esc(a.condiciones.fueraParam||'—')}${a.condiciones.fueraParamDet?' — '+esc(a.condiciones.fueraParamDet):''}</div>
+    </div>`:''}
 
     <div class="section-head"><h3>3 · Fenómeno (5W+1H)</h3></div>
     <div class="grid-2" style="font-size:.88rem">
@@ -1577,7 +1654,7 @@ function abrirADF(id){
 
     <div class="section-head"><h3>4 · Causas probables ${a.analisis?`<small class="muted">(${esc(a.analisis.modoDetectado)})</small>`:''}</h3></div>
     <div class="causa-list">${(a.analisis?.causas||[]).map((c,i)=>
-      `<div class="causa-item ${c.probable?'probable':''}"><span class="c-num">${i+1}</span><span class="c-txt">${esc(c.txt)} ${c.probable?'<b style="color:var(--orange-dk)"> ← más probable</b>':''}</span></div>`).join('')}</div>
+      `<div class="causa-item ${c.probable?'probable':''}"><span class="c-num">${i+1}</span><span class="c-txt">${esc(c.txt)} ${c.cat?`<span class="cat-tag">${esc(c.cat)}</span>`:''} ${c.probable?'<b style="color:var(--orange-dk)"> ← probable</b>':''}</span></div>`).join('')}</div>
 
     <div class="section-head"><h3>5 · 5 Porqués</h3></div>
     <div class="porque-chain">${(a.analisis?.porques||[]).map((p,i)=>

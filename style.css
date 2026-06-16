@@ -158,10 +158,14 @@ table.data .row-click { cursor:pointer; }
 .causa-item { display:flex; align-items:flex-start; gap:10px; padding:10px 12px; border:1.5px solid var(--border);
   border-radius:var(--radius-sm); background:var(--white); transition:border-color .15s, background .15s; }
 .causa-item.probable { border-color:var(--orange); background:var(--orange-lt); }
-.causa-item input[type=radio] { margin-top:3px; accent-color:var(--orange); }
-.causa-item .c-num { font-weight:800; color:var(--blue); min-width:22px; }
+.causa-item input[type=radio], .causa-item input[type=checkbox] { margin-top:3px; accent-color:var(--orange); width:17px; height:17px; }
+.causa-item .c-num { font-weight:800; color:var(--blue); min-width:22px; margin-top:2px; }
 .causa-item .c-txt { flex:1; }
 .causa-item textarea { width:100%; border:1px dashed var(--border); border-radius:4px; padding:5px 8px; font-size:.85rem; }
+.causa-item .c-cat { align-self:flex-start; margin-top:1px; min-width:130px; font-size:.78rem; padding:5px 6px;
+  border:1px solid var(--border); border-radius:6px; background:var(--gray-lt); color:var(--blue); font-weight:600; }
+.cat-tag { display:inline-block; background:var(--blue); color:#fff; font-size:.68rem; font-weight:700;
+  padding:1px 7px; border-radius:10px; vertical-align:middle; letter-spacing:.2px; }
 
 /* ── 5 Porqués ── */
 .porque-chain { display:flex; flex-direction:column; gap:10px; }

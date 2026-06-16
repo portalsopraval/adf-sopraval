@@ -686,6 +686,7 @@ function nuevoBorrador(){
     ot:'', afectoProduccion:'No', tipoProblema:'Esporádico',
     sintoma:'', modoFalla:'', accionCorrectiva:'',
     participantes:[],
+    equipoAnalisis:[],
     w_que:'', w_cuando:'', w_donde:'', w_quien:'', w_cual:'', w_como:'',
     imagen:'',
     condiciones:{ estado:'', estadoOtro:'', turno:'', pmVencido:'No', intervencion:'No', intervencionDet:'', fueraParam:'No', fueraParamDet:'' },
@@ -696,6 +697,10 @@ function nuevoBorrador(){
 function renderNuevo(){
   if(!_wizard) _wizard = nuevoBorrador();
   const w=_wizard;
+  // El equipo de análisis incluye por defecto a quien levanta el ADF
+  if(!w.equipoAnalisis || !w.equipoAnalisis.length){
+    w.equipoAnalisis = [{ nombre: CU?.name || '', area: '', autor:true }];
+  }
   const co = w.condiciones || {};
   $('pane-nuevo').innerHTML = `
     <div class="page-title">➕ Nuevo Análisis de Falla</div>
@@ -799,6 +804,12 @@ function renderNuevo(){
           <select id="c-fp">${['No','Sí'].map(o=>`<option ${co.fueraParam===o?'selected':''}>${o}</option>`).join('')}</select></div>
         <div class="field" style="grid-column:span 2"><label>¿Qué parámetro? (si aplica)</label><input id="c-fp-det" value="${esc(co.fueraParamDet||'')}" placeholder="Ej: presión 8 bar sobre el límite de 6 bar"></div>
       </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">👥 Quiénes participaron en el análisis <small style="color:var(--gray);font-weight:400">— equipo multidisciplinario (incluye al autor del ADF y a quienes aportan ideas)</small></div>
+      <div id="equipo-list">${(w.equipoAnalisis||[]).map((p,i)=>equipoRowHTML(p,i)).join('')}</div>
+      <button type="button" class="btn-ghost btn-sm" onclick="agregarIntegrante()">+ Agregar integrante</button>
     </div>
 
     <div class="card">
@@ -1073,6 +1084,26 @@ function editParticipante(i,f,v){ _wizard.participantes[i][f]=v; }
 function quitarParticipante(i){
   _wizard.participantes.splice(i,1);
   $('part-list').innerHTML = _wizard.participantes.map((p,j)=>partRowHTML(p,j)).join('');
+}
+
+// Equipo multidisciplinario del análisis (Nombre + Área) — incluye al autor del ADF
+function equipoRowHTML(p,i){
+  return `<div class="part-row" id="equipo-${i}">
+    <input class="part-nombre" value="${esc(p.nombre||'')}" placeholder="Nombre y apellido" onchange="editIntegrante(${i},'nombre',this.value)">
+    <input class="eq-area" value="${esc(p.area||'')}" placeholder="Área (ej: Mantenimiento, Producción, Calidad)" onchange="editIntegrante(${i},'area',this.value)">
+    ${p.autor?`<span class="autor-tag" title="Autor del ADF">autor</span>`:`<button type="button" class="part-del" onclick="quitarIntegrante(${i})" title="Quitar">✕</button>`}
+  </div>`;
+}
+function agregarIntegrante(){
+  if(!_wizard.equipoAnalisis) _wizard.equipoAnalisis=[];
+  _wizard.equipoAnalisis.push({nombre:'',area:''});
+  const i=_wizard.equipoAnalisis.length-1;
+  $('equipo-list').insertAdjacentHTML('beforeend', equipoRowHTML(_wizard.equipoAnalisis[i], i));
+}
+function editIntegrante(i,f,v){ _wizard.equipoAnalisis[i][f]=v; }
+function quitarIntegrante(i){
+  _wizard.equipoAnalisis.splice(i,1);
+  $('equipo-list').innerHTML = _wizard.equipoAnalisis.map((p,j)=>equipoRowHTML(p,j)).join('');
 }
 
 // Fila de causa: checkbox (varias probables) + texto + categoría 6M
@@ -1572,12 +1603,13 @@ function exportarIndicadoresExcel(data, m, ex){
   m.equipos.forEach(e=>porEquipo.push([ e.equipo, e.sap||'', e.area, e.nFallas, e.nConDatos,
     fnum(e.mttr), fnum(e.mtbf), e.disp!=null?Math.round(e.disp*10)/10:'', fnum(e.horasDetenido) ]));
 
-  const detalle = [['Folio','Fecha','Área','Línea','Equipo','Cód. SAP','Componente','OT','Inicio falla','Marcha','Min. perdidos','Tipo','Modo de falla','Síntoma','Causas probables (6M)','Participantes','Estado','T. reparación (h)']];
+  const detalle = [['Folio','Fecha','Área','Línea','Equipo','Cód. SAP','Componente','OT','Inicio falla','Marcha','Min. perdidos','Tipo','Modo de falla','Síntoma','Causas probables (6M)','Equipo del análisis','Participantes reparación','Estado','T. reparación (h)']];
   data.forEach(a=>detalle.push([ a.folio||'', a.fecha||'', a.area||'', a.linea||'', a.equipo||'', a.codSap||'', a.componente||'',
     a.ot||'', (a.fechaInicio||'')+' '+(a.horaInicio||''), (a.fechaMarcha||'')+' '+(a.horaMarcha||''),
     a.minutosPerdidos||'', a.tipoProblema||'', a.analisis?.modoDetectado || a.modoFalla || '',
     (a.sintoma||'').slice(0,120),
     (a.analisis?.causas||[]).filter(c=>c.probable).map(c=>`${c.txt} (${c.cat||'—'})`).join(' | '),
+    (a.equipoAnalisis||[]).filter(p=>p.nombre).map(p=>`${p.nombre}${p.area?' ('+p.area+')':''}`).join(' | '),
     (a.participantes||[]).filter(p=>p.nombre).map(p=>`${p.nombre} (${p.rol||''})`).join(' | '),
     a.estado||'', fnum(downtimeHoras(a)) ]));
 
@@ -1673,7 +1705,8 @@ function abrirADF(id){
       <div><b>Equipo:</b> ${esc(a.equipo)}</div><div><b>Cód. SAP:</b> ${esc(a.codSap||'—')}</div><div><b>OT:</b> ${esc(a.ot||'—')}</div>
       <div><b>Componente:</b> ${esc(a.componente||'—')}</div>
     </div>
-    <p style="margin-top:8px;font-size:.88rem"><b>👥 Participantes:</b> ${(a.participantes&&a.participantes.length)?a.participantes.filter(p=>p.nombre).map(p=>`${esc(p.nombre)} <span class="cat-tag">${esc(p.rol||'')}</span>`).join(' · ')||'—':'—'}</p>
+    <p style="margin-top:8px;font-size:.88rem"><b>👥 Equipo del análisis:</b> ${(a.equipoAnalisis&&a.equipoAnalisis.length)?a.equipoAnalisis.filter(p=>p.nombre).map(p=>`${esc(p.nombre)}${p.area?' <span class="cat-tag">'+esc(p.area)+'</span>':''}`).join(' · ')||'—':'—'}</p>
+    <p style="font-size:.88rem"><b>🔧 Participantes en la reparación:</b> ${(a.participantes&&a.participantes.length)?a.participantes.filter(p=>p.nombre).map(p=>`${esc(p.nombre)} <span class="cat-tag">${esc(p.rol||'')}</span>`).join(' · ')||'—':'—'}</p>
 
     <div class="section-head"><h3>2 · Avería</h3></div>
     <p><b>Síntoma:</b> ${esc(a.sintoma||'—')}</p>

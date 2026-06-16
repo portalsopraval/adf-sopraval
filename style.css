@@ -169,6 +169,9 @@ table.data .row-click { cursor:pointer; }
 .part-row { display:flex; gap:8px; align-items:center; margin-bottom:8px; }
 .part-row .part-nombre { flex:1 1 auto; width:auto; min-width:0; }
 .part-row .part-rol { flex:0 0 150px; width:150px; }
+.part-row .eq-area { flex:1 1 auto; width:auto; min-width:0; }
+.autor-tag { flex-shrink:0; background:var(--green); color:#fff; font-size:.68rem; font-weight:700;
+  padding:4px 9px; border-radius:10px; letter-spacing:.3px; text-transform:uppercase; }
 .part-row input, .part-row select { border:1px solid var(--border); border-radius:6px; padding:7px 9px; font-size:.85rem; }
 .part-del { border:none; background:var(--gray-lt); color:var(--red); width:30px; height:30px; border-radius:6px;
   cursor:pointer; font-weight:700; flex-shrink:0; }

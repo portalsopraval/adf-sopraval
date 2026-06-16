@@ -1339,20 +1339,27 @@ function renderTiempos(){
       const creado = new Date(a.createdAt); creado.setHours(0,0,0,0);
       const totalDias = Math.max(1, Math.round((fechaComp-creado)/86400000));
       const transcurrido = Math.round((today-creado)/86400000);
-      const pct = Math.round(transcurrido/totalDias*100);
-      let semaforo, semCls;
-      if(s.hecho){ semaforo='✅'; semCls='sem-done'; }
-      else if(pct<50){ semaforo='🟢'; semCls='sem-ok'; }
-      else if(pct<90){ semaforo='🟡'; semCls='sem-warn'; }
-      else if(pct<=100){ semaforo='🟠'; semCls='sem-limit'; }
-      else { semaforo='🔴'; semCls='sem-over'; }
-      rows.push({ a, i, pl, s, pct, transcurrido, totalDias, semaforo, semCls });
+      const diasRest = Math.round((fechaComp-today)/86400000); // >0 faltan · 0 vence hoy · <0 vencido
+      let pct = Math.round(transcurrido/totalDias*100);
+      if(pct<0) pct=0;
+      let semaforo, semCls, estadoTiempo;
+      if(s.hecho){ semaforo='✅'; semCls='sem-done'; estadoTiempo='Concluido'; }
+      else if(diasRest<0){ semaforo='🔴'; semCls='sem-over'; estadoTiempo=`Vencido (${Math.abs(diasRest)} día(s))`; pct=100; }
+      else if(diasRest===0){ semaforo='🟠'; semCls='sem-limit'; estadoTiempo='Vence hoy'; pct=Math.max(pct,100); }
+      else if(pct>=90){ semaforo='🟠'; semCls='sem-limit'; estadoTiempo=`Límite (faltan ${diasRest} día(s))`; }
+      else if(pct>=50){ semaforo='🟡'; semCls='sem-warn'; estadoTiempo=`En riesgo (faltan ${diasRest} día(s))`; }
+      else { semaforo='🟢'; semCls='sem-ok'; estadoTiempo=`A tiempo (faltan ${diasRest} día(s))`; }
+      rows.push({ a, i, pl, s, pct, transcurrido, diasRest, totalDias, semaforo, semCls, estadoTiempo });
     });
   }
+  // Más urgentes primero (vencidos arriba); concluidos al final
+  rows.sort((a,b)=> (a.s.hecho?1:0)-(b.s.hecho?1:0) || a.diasRest-b.diasRest);
+  const nVencidos = rows.filter(r=>!r.s.hecho && r.diasRest<0).length;
 
   $('pane-tiempos').innerHTML = `
     <div class="page-title">⏱ Control de Tiempos</div>
     <div class="page-sub">Planes de acción con fecha compromiso — ${rows.length} item(s) activo(s)</div>
+    ${nVencidos ? `<div class="alerta-vencidos">🔴 <b>${nVencidos}</b> plan(es) de acción <b>vencido(s)</b> sin concluir. Requieren atención inmediata.</div>` : ''}
     <div class="tiempos-leyenda">
       <span>🟢 A tiempo (&lt;50%)</span>
       <span>🟡 En riesgo (50–90%)</span>
@@ -1368,8 +1375,8 @@ function tiemposTabla(rows){
   return `<div class="tbl-wrap"><table class="data">
     <thead><tr>
       <th>Estado</th><th>Folio</th><th>Equipo</th><th>Actividad (plan)</th>
-      <th>Responsable</th><th>F. Compromiso</th><th>Transcurrido</th>
-      <th>Semáforo</th><th>Avance</th><th>Concluido</th>
+      <th>Responsable</th><th>F. Compromiso</th><th>Plazo</th>
+      <th>Semáforo</th><th>Avance</th><th>Respaldo</th><th>Concluido</th>
     </tr></thead>
     <tbody>
       ${rows.map(r=>`<tr class="${r.s.hecho?'row-done':''}">
@@ -1379,11 +1386,17 @@ function tiemposTabla(rows){
         <td style="max-width:220px">${esc(r.pl.actividad)}</td>
         <td>${esc(r.pl.responsable||'—')}</td>
         <td class="nowrap">${fmtD(r.pl.fecha)}</td>
-        <td class="nowrap">${r.transcurrido} día(s)</td>
+        <td class="nowrap"><span class="plazo-tag ${r.semCls}">${esc(r.estadoTiempo)}</span></td>
         <td style="text-align:center;font-size:1.3rem">${r.semaforo}</td>
         <td class="avance-cell">
           <div class="avance-bar"><div class="avance-fill ${r.semCls}" style="width:${Math.min(100,r.pct)}%"></div></div>
           <span class="avance-pct">${r.pct}%</span>
+        </td>
+        <td style="text-align:center" class="nowrap">
+          ${r.s.respaldo?`<a class="resp-link" onclick="verRespaldo('${r.a.id}',${r.i})" title="${esc(r.s.respaldo.name||'respaldo')}">📎 Ver</a><br>`:''}
+          <button class="btn-ghost btn-sm" onclick="document.getElementById('resp-${r.a.id}-${r.i}').click()">${r.s.respaldo?'Cambiar':'➕ Adjuntar'}</button>
+          <input type="file" id="resp-${r.a.id}-${r.i}" class="hidden" accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.txt"
+            onchange="subirRespaldo('${r.a.id}',${r.i},this)">
         </td>
         <td style="text-align:center">
           <input type="checkbox" class="chk-concluido" ${r.s.hecho?'checked':''}
@@ -1404,6 +1417,47 @@ async function concluirPlan(adfId, planIdx, checked){
     updatedAt:new Date().toISOString(),
   });
   toast(checked?'Plan marcado como concluido.':'Plan desmarcado.','ok');
+}
+
+// Adjunta un respaldo (foto o archivo) al plan de acción, desde Control de Tiempos
+async function subirRespaldo(adfId, idx, input){
+  const file=input.files[0]; if(!file) return;
+  const MAXB=900*1024; // límite por archivo (doc Firestore ~1MB)
+  const type=file.type||'', name=file.name||'respaldo';
+  let data;
+  if(type.startsWith('image/')){
+    data=await comprimirImg(file);
+  } else {
+    if(file.size>MAXB){ toast('Archivo muy grande (máx ~900 KB). Comprime el archivo o adjunta una foto.','err'); input.value=''; return; }
+    data=await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsDataURL(file); });
+  }
+  const a=_cache.adfs.find(x=>x.id===adfId); if(!a) return;
+  const planes=a.analisis?.planes||[];
+  const prev=a.seguimiento||[];
+  const len=Math.max(planes.length, prev.length, idx+1);
+  const seg=[];
+  for(let k=0;k<len;k++){
+    seg[k]={ ...(prev[k]||{}) };
+    if(!seg[k].actividad && planes[k]) seg[k].actividad=planes[k].actividad;
+  }
+  seg[idx]={ ...seg[idx], respaldo:{ data, name, type, subidoPor:CU.name, fecha:new Date().toISOString() } };
+  await fdb.collection(COL_ADF).doc(adfId).update({ seguimiento:seg, updatedAt:new Date().toISOString() });
+  toast('Respaldo adjuntado.','ok');
+}
+
+// Abre/descarga el respaldo del plan
+function verRespaldo(adfId, idx){
+  const a=_cache.adfs.find(x=>x.id===adfId); if(!a) return;
+  const r=(a.seguimiento||[])[idx]?.respaldo; if(!r?.data) return;
+  if((r.type||'').startsWith('image/')){
+    const w=window.open('','_blank','width=860,height=720');
+    w.document.write(`<!DOCTYPE html><html><body style="margin:0;background:#111;display:flex;align-items:center;justify-content:center;min-height:100vh">
+      <img src="${r.data}" style="max-width:100%;max-height:95vh;border-radius:8px"></body></html>`);
+  } else {
+    const link=document.createElement('a');
+    link.href=r.data; link.download=r.name||'respaldo';
+    document.body.appendChild(link); link.click(); link.remove();
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -2315,6 +2369,6 @@ async function crearUsuario(){
 // Exponer funciones usadas en onclick inline
 Object.assign(window,{ irTab, abrirADF, marcarProbable, editCausa, editPorque, editPlan,
   agregarPlan, editSeg, guardarSeguimiento, cerrarADF, eliminarADF,
-  concluirPlan, subirImgSeg, verImagenSeg,
+  concluirPlan, subirImgSeg, verImagenSeg, subirRespaldo, verRespaldo,
   abrirNuevoPlan, abrirPlanMP, guardarPlanMP, eliminarPlanMP,
   agregarActMP, calcProximaAuto, autoFillPlan });

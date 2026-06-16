@@ -283,6 +283,23 @@ table.data .row-click { cursor:pointer; }
 .avance-pct { font-size:.72rem; color:var(--gray); }
 .chk-concluido { width:18px; height:18px; cursor:pointer; accent-color:var(--green); }
 tr.row-done td { opacity:.55; }
+
+/* ── Aviso de planes vencidos ── */
+.alerta-vencidos { background:#fdecec; border:1.5px solid var(--red); color:#9b1c1c;
+  border-radius:var(--radius-sm); padding:11px 16px; margin-bottom:14px; font-size:.9rem; }
+
+/* ── Tag de plazo (estado de tiempo) ── */
+.plazo-tag { display:inline-block; font-size:.74rem; font-weight:700; padding:3px 9px; border-radius:10px;
+  white-space:nowrap; }
+.plazo-tag.sem-ok    { background:#e6f6ec; color:#137a3a; }
+.plazo-tag.sem-warn  { background:#fdf2e2; color:#9a6209; }
+.plazo-tag.sem-limit { background:#fdeadd; color:#b1430c; }
+.plazo-tag.sem-over  { background:#fdecec; color:#b91c1c; }
+.plazo-tag.sem-done  { background:var(--gray-lt); color:var(--gray); }
+
+/* ── Link de respaldo ── */
+.resp-link { color:var(--blue); font-weight:700; font-size:.78rem; cursor:pointer; text-decoration:underline; }
+.resp-link:hover { color:var(--orange); }
 tr.row-done td:last-child { opacity:1; }
 
 /* ═══ SEGUIMIENTO CON IMAGEN POR ÍTEM ═══ */

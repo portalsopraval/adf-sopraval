@@ -43,6 +43,9 @@ const esLider = () => CU && CU.role === 'lider';
 // Administradores con acceso a Indicadores y Reporte semanal
 const ADMINS = ['gvelizm@sopraval.cl','jgomezf@sopraval.cl'];
 const esAdmin = () => CU && ADMINS.includes((CU.email||'').toLowerCase());
+// Usuarios con vista limitada SOLO a Planes PM e Indicadores
+const VISTA_PM_IND = ['fcarroza@sopraval.cl'];
+const esVistaPMInd = () => CU && VISTA_PM_IND.includes((CU.email||'').toLowerCase());
 
 function toast(msg, type='info'){
   const t=document.createElement('div'); t.className='toast '+type; t.textContent=msg;
@@ -822,11 +825,17 @@ function arrancarApp(){
   $('nav-role').textContent = CU.cargo || (CU.role==='lider'?'Líder':'Técnico');
   renderTabs();
   escucharADFs();
-  if(esLider()) escucharPlanesMP();
-  irTab('inicio');
+  if(esLider() || esVistaPMInd()) escucharPlanesMP();
+  irTab(esVistaPMInd() ? 'mantenimiento' : 'inicio');
 }
 
 function renderTabs(){
+  if(esVistaPMInd()){
+    const tabs = [['mantenimiento','🔧 Planes PM'],['confiabilidad','📊 Indicadores']];
+    $('tabs-nav').innerHTML = tabs.map(([k,l])=>`<button class="tab-btn" data-tab="${k}">${l}</button>`).join('');
+    $('tabs-nav').querySelectorAll('.tab-btn').forEach(b=> b.addEventListener('click', ()=>irTab(b.dataset.tab)));
+    return;
+  }
   const tabs = (TABS[CU.role] || TABS.tecnico).slice();
   if(esAdmin()){
     const item = ['confiabilidad','📊 Indicadores'];
@@ -840,7 +849,8 @@ function renderTabs(){
 }
 
 function irTab(tab){
-  if(tab==='confiabilidad' && !esAdmin()) tab='inicio';
+  if(tab==='confiabilidad' && !esAdmin() && !esVistaPMInd()) tab=esVistaPMInd()?'mantenimiento':'inicio';
+  if(esVistaPMInd() && tab!=='confiabilidad' && tab!=='mantenimiento') tab='mantenimiento';
   _activeTab=tab;
   $('tabs-nav').querySelectorAll('.tab-btn').forEach(b=>
     b.classList.toggle('active', b.dataset.tab===tab));
@@ -867,7 +877,7 @@ function escucharADFs(){
 }
 
 function misADFs(){
-  return esLider() ? _cache.adfs : _cache.adfs.filter(a=> a.creadorId===CU.id || a.creadorEmail===CU.email);
+  return (esLider() || esVistaPMInd()) ? _cache.adfs : _cache.adfs.filter(a=> a.creadorId===CU.id || a.creadorEmail===CU.email);
 }
 
 /* ═══════════════════════════════════════════════════════════

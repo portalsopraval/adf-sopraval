@@ -933,6 +933,7 @@ function renderListado(){
       <label class="btn-primary btn-sm imp-file">📥 Importar ADF terminados
         <input type="file" accept=".xlsx,.xls" onchange="importarADFExcel(this)">
       </label>
+      <button class="btn-ghost btn-sm" onclick="normalizarAreasGuardadas()">🧹 Normalizar áreas</button>
     </div>`:''}
     ${tablaADF(data)}
   `;
@@ -1502,6 +1503,7 @@ async function guardarADF(){
     evidencias:'', cerradoPor:'', cerradoAt:'',
     historial:[{ accion:'Creado', usuario:CU.name, fecha:new Date().toISOString() }],
   };
+  adf.area = normArea(adf.area);
   try{
     await fdb.collection(COL_ADF).doc(id).set(adf);
     toast('ADF '+folio+' guardado correctamente.','ok');
@@ -2125,6 +2127,24 @@ function inferirMaquina(equipo){
   return m||null;
 }
 
+// Limpieza única: pasa a MAYÚSCULAS las áreas ya guardadas (unifica "Faena"/"FAENA")
+async function normalizarAreasGuardadas(){
+  if(!esAdmin()){ toast('Solo administradores.','err'); return; }
+  const pend = _cache.adfs.filter(a=> a.area && a.area !== normArea(a.area));
+  if(!pend.length){ toast('Las áreas ya están normalizadas.','ok'); return; }
+  if(!confirm(`Se normalizarán ${pend.length} ADF (área a MAYÚSCULAS). ¿Continuar?`)) return;
+  try{
+    for(let i=0;i<pend.length;i+=400){
+      const batch = fdb.batch();
+      pend.slice(i,i+400).forEach(a=>{ const na=normArea(a.area); batch.update(fdb.collection(COL_ADF).doc(a.id), { area:na, updatedAt:new Date().toISOString() }); a.area=na; });
+      await batch.commit();
+    }
+    toast(`✅ ${pend.length} áreas normalizadas.`,'ok');
+    if($('pane-confiabilidad') && $('pane-confiabilidad').classList.contains('active')) renderConfiabilidad();
+    if($('pane-listado') && $('pane-listado').classList.contains('active')) renderListado();
+  }catch(e){ toast('Error: '+e.message,'err'); }
+}
+
 async function importarADFExcel(input){
   if(!esAdmin()){ toast('Solo administradores pueden importar ADF.','err'); input.value=''; return; }
   const file = input.files && input.files[0];
@@ -2170,6 +2190,7 @@ async function importarADFExcel(input){
       // Si el formato no trae Área/Línea/SAP (ej. ficha nueva), inferir desde el catálogo de máquinas
       let areaR=reg.area||'', lineaR=reg.linea||'', sapR=reg.codSap||'';
       if(!areaR || !lineaR || !sapR){ const mq=inferirMaquina(reg.equipo); if(mq){ areaR=areaR||mq.area; lineaR=lineaR||mq.linea; sapR=sapR||mq.sap; } }
+      areaR = normArea(areaR);
 
       docs.push({ id, data: {
         id, folio, fecha: fechaReg,
@@ -2395,7 +2416,7 @@ async function guardarCabecera(id){
   const a=_cache.adfs.find(x=>x.id===id); if(!a) return;
   const campos={
     folio:   ($('cf-folio')?.value||'').trim(),
-    area:    ($('cf-area')?.value||'').trim(),
+    area:    normArea(($('cf-area')?.value||'').trim()),
     linea:   ($('cf-linea')?.value||'').trim(),
     equipo:  ($('cf-equipo')?.value||'').trim(),
     codSap:  ($('cf-sap')?.value||'').trim(),
@@ -2980,6 +3001,6 @@ async function crearUsuario(){
 Object.assign(window,{ irTab, abrirADF, marcarProbable, editCausa, editPorque, editPlan,
   agregarPlan, editSeg, guardarSeguimiento, cerrarADF, eliminarADF,
   concluirPlan, subirImgSeg, verImagenSeg, subirRespaldo, verRespaldo, exportarA3,
-  descargarPlantillaADF, importarADFExcel, editarCabecera, autoCabecera, guardarCabecera,
+  descargarPlantillaADF, importarADFExcel, editarCabecera, autoCabecera, guardarCabecera, normalizarAreasGuardadas,
   abrirNuevoPlan, abrirPlanMP, guardarPlanMP, eliminarPlanMP,
   agregarActMP, calcProximaAuto, autoFillPlan });

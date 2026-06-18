@@ -1718,7 +1718,7 @@ function calcConfiabilidad(list){
   const grupos = {};
   for(const a of list){
     const key = a.codSap || a.equipo || '—';
-    if(!grupos[key]) grupos[key] = { sap:a.codSap||'', equipo:a.equipo||'—', area:a.area||'—', fallas:[] };
+    if(!grupos[key]) grupos[key] = { sap:a.codSap||'', equipo:a.equipo||'—', area:normArea(a.area)||'—', fallas:[] };
     grupos[key].fallas.push({
       dt:  downtimeHoras(a),
       ini: fechaHoraMs(a.fechaInicio, a.horaInicio),
@@ -1773,7 +1773,7 @@ const PALETA = ['#1B3580','#F07B1B','#2A4A9B','#15803D','#B91C1C','#B45309','#02
 // Aplica los filtros activos (área + rango de fechas) sobre los ADF
 function indADFsFiltrados(){
   let data = misADFs();
-  if(_indFiltro.area)  data = data.filter(a=>a.area===_indFiltro.area);
+  if(_indFiltro.area)  data = data.filter(a=>normArea(a.area)===_indFiltro.area);
   if(_indFiltro.desde) data = data.filter(a=>(a.fecha||'') >= _indFiltro.desde);
   if(_indFiltro.hasta) data = data.filter(a=>(a.fecha||'') <= _indFiltro.hasta);
   return data;
@@ -1800,12 +1800,16 @@ function contarPor(data, fn){
   return Object.entries(map).map(([k,v])=>({k,v})).sort((a,b)=>b.v-a.v);
 }
 
+// Normaliza el nombre de área para agrupar sin distinguir mayúsculas/acentos/espacios
+// (ej: "FAENA" y "Faena" cuentan como la misma área)
+function normArea(a){ return String(a||'').trim().replace(/\s+/g,' ').toUpperCase(); }
+
 function renderConfiabilidad(){
   _indCharts.forEach(c=>{ try{c.destroy();}catch(e){} }); _indCharts=[];
   const data = indADFsFiltrados();
   const m = calcConfiabilidad(data);
   const ex = indMetricasExtra(data);
-  const areas = [...new Set(misADFs().map(a=>a.area).filter(Boolean))].sort();
+  const areas = [...new Set(misADFs().map(a=>normArea(a.area)).filter(Boolean))].sort();
 
   $('pane-confiabilidad').innerHTML = `
     <div class="page-title">📊 Indicadores de Mantenimiento</div>
@@ -1896,7 +1900,7 @@ function construirGraficos(data, m){
   const mk = (id, cfg)=>{ const el=$(id); if(el){ _indCharts.push(new Chart(el, cfg)); } };
 
   // Fallas por área
-  const pa = contarPor(data, a=>a.area);
+  const pa = contarPor(data, a=>normArea(a.area));
   mk('ch-area', { type:'bar', data:{ labels:pa.map(x=>x.k),
     datasets:[{ data:pa.map(x=>x.v), backgroundColor:'#1B3580' }] },
     options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}} } });

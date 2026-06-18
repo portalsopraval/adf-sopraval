@@ -2109,6 +2109,18 @@ function parseHoraADF(v){
   return m ? m[1].padStart(2,'0')+':'+m[2] : '';
 }
 
+// Busca una máquina del catálogo a partir del nombre de equipo (para inferir Área/Línea/SAP)
+function inferirMaquina(equipo){
+  if(typeof MAQUINAS_PLANTA==='undefined') return null;
+  const t = norm(equipo); if(!t.trim()) return null;
+  let m = MAQUINAS_PLANTA.find(x=> norm(x.nombre)===t);
+  if(m) return m;
+  const code = (String(equipo).match(/[A-Za-z]{1,3}-?\d{3,5}[A-Za-z]?/)||[])[0];
+  if(code){ const nc=norm(code); m = MAQUINAS_PLANTA.find(x=> norm(x.nombre).includes(nc)); if(m) return m; }
+  m = MAQUINAS_PLANTA.find(x=> t.includes(norm(x.nombre)) || norm(x.nombre).includes(t));
+  return m||null;
+}
+
 async function importarADFExcel(input){
   if(!esAdmin()){ toast('Solo administradores pueden importar ADF.','err'); input.value=''; return; }
   const file = input.files && input.files[0];
@@ -2151,10 +2163,14 @@ async function importarADFExcel(input){
       const fechaReg  = reg.fecha || reg.fechaInicio || nowISO.slice(0,10);
       const id = uid();
 
+      // Si el formato no trae Área/Línea/SAP (ej. ficha nueva), inferir desde el catálogo de máquinas
+      let areaR=reg.area||'', lineaR=reg.linea||'', sapR=reg.codSap||'';
+      if(!areaR || !lineaR || !sapR){ const mq=inferirMaquina(reg.equipo); if(mq){ areaR=areaR||mq.area; lineaR=lineaR||mq.linea; sapR=sapR||mq.sap; } }
+
       docs.push({ id, data: {
         id, folio, fecha: fechaReg,
-        area: reg.area||'', linea: reg.linea||'', equipo: reg.equipo||'',
-        codSap: reg.codSap||'', componente: reg.componente||'',
+        area: areaR, linea: lineaR, equipo: reg.equipo||'',
+        codSap: sapR, componente: reg.componente||'',
         fechaInicio: reg.fechaInicio||'', horaInicio: reg.horaInicio||'',
         fechaMarcha: reg.fechaMarcha||'', horaMarcha: reg.horaMarcha||'',
         minutosPerdidos: reg.minutosPerdidos||'', ot: reg.ot||'',

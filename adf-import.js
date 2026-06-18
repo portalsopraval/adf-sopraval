@@ -56,6 +56,15 @@
     return '';
   }
   function valPorEtiqueta(grid, re, span){ return valDer(grid, buscar(grid, re), span); }
+  // Valor que puede venir escrito DENTRO de la misma celda de la etiqueta
+  // (ej. "Descripción de la Avería:\n<texto>") o a la derecha si la celda solo tiene la etiqueta.
+  function valCeldaOEtiqueta(grid, re, span){
+    var pos=buscar(grid,re); if(!pos) return '';
+    var full=cel(grid,pos.r,pos.c);
+    var m=full.match(/[:?]\s*([\s\S]+)$/);
+    if(m && m[1].trim()) return m[1].replace(/\s+/g,' ').trim();
+    return valDer(grid,pos,span);
+  }
 
   /* ── Diccionario de sinónimos para tablas (campo -> variantes de encabezado) ── */
   var SINONIMOS = [
@@ -221,18 +230,20 @@
   // Ficha NUEVO ("REPORTE DE AVERÍA" + "PLANES DE ACCIÓN") -> 1 registro
   function leerFichaNuevo(wb, rep){
     var g=aoa(rep);
+    var folio=valCeldaOEtiqueta(g,/folio/);
+    if(/reporte de averia|planilla|intervencion/.test(norm(folio))) folio=''; // evita tomar el título
     var reg={
-      folio:valPorEtiqueta(g,/folio/),
-      fecha:parseFecha(valPorEtiqueta(g,/^fecha:?$/)),
-      area:'', linea:valPorEtiqueta(g,/^linea:?$/),
-      equipo:valPorEtiqueta(g,/^maquina:?$/),
-      codSap:valPorEtiqueta(g,/n.*sap/),
-      componente:valPorEtiqueta(g,/^componente:?$/),
+      folio:folio,
+      fecha:parseFecha(valCeldaOEtiqueta(g,/^fecha/)),
+      area:'', linea:valCeldaOEtiqueta(g,/^linea/),
+      equipo:valCeldaOEtiqueta(g,/^maquina/),
+      codSap:valCeldaOEtiqueta(g,/n.*sap/),
+      componente:valCeldaOEtiqueta(g,/^componente/),
       fechaInicio:'', horaInicio:'', fechaMarcha:'', horaMarcha:'',
-      minutosPerdidos:valPorEtiqueta(g,/tiempo parada/),
-      ot:valPorEtiqueta(g,/o\.?t\.?/),
+      minutosPerdidos:valCeldaOEtiqueta(g,/tiempo parada/),
+      ot:valCeldaOEtiqueta(g,/o\.?t\.?/),
       afectoProduccion:'', tipoProblema:'',
-      sintoma:valPorEtiqueta(g,/descripcion de la averia/),
+      sintoma:valCeldaOEtiqueta(g,/descripcion de la averia/),
       modoFalla:'', accionCorrectiva:'',
       causas:[], porques:[], planes:[], participantes:[], estado:'',
     };

@@ -112,6 +112,9 @@ button:disabled { opacity:.5; cursor:not-allowed; }
 .imp-bar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin:-8px 0 18px; }
 .imp-file { cursor:pointer; display:inline-flex; align-items:center; }
 .imp-file input { display:none; }
+.cab-form { background:var(--gray-lt); border:1px solid var(--border); border-radius:10px; padding:12px 14px; margin:8px 0 4px; }
+.cab-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+@media(max-width:640px){ .cab-grid { grid-template-columns:1fr; } }
 
 /* ── Cards ── */
 .card { background:var(--white); border-radius:var(--radius); box-shadow:var(--shadow-sm);
@@ -119,7 +122,7 @@ button:disabled { opacity:.5; cursor:not-allowed; }
 .card-title { font-size:1.05rem; font-weight:800; color:var(--blue); margin-bottom:4px;
   display:flex; align-items:center; gap:8px; }
 .card-sub { font-size:.84rem; color:var(--gray); margin-bottom:16px; }
-.section-head { border-left:4px solid var(--orange); padding-left:12px; margin:26px 0 14px; }
+.section-head { border-left:4px solid var(--orange); padding-left:12px; margin:26px 0 14px; display:flex; align-items:center; justify-content:space-between; gap:10px; }
 .section-head h3 { font-size:1.02rem; font-weight:800; color:var(--blue); }
 .section-head p { font-size:.82rem; color:var(--gray); }
 

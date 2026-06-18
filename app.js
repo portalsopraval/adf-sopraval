@@ -2291,12 +2291,13 @@ function abrirADF(id){
       <span class="muted" style="margin-left:auto;font-size:.8rem">Creado por ${esc(a.creadorNombre||'—')} · ${fmtDT(a.createdAt)}</span>
     </div>
 
-    <div class="section-head"><h3>1 · Datos generales</h3></div>
+    <div class="section-head"><h3>1 · Datos generales</h3>${(esLider()||esAdmin())?`<button class="btn-ghost btn-sm" onclick="editarCabecera('${a.id}')">✏️ Editar</button>`:''}</div>
     <div class="grid-3">
-      <div><b>Fecha:</b> ${fmtD(a.fecha)}</div><div><b>Área:</b> ${esc(a.area)}</div><div><b>Línea:</b> ${esc(a.linea||'—')}</div>
-      <div><b>Equipo:</b> ${esc(a.equipo)}</div><div><b>Cód. SAP:</b> ${esc(a.codSap||'—')}</div><div><b>OT:</b> ${esc(a.ot||'—')}</div>
-      <div><b>Componente:</b> ${esc(a.componente||'—')}</div>
+      <div><b>Folio:</b> ${esc(a.folio||'—')}</div><div><b>Fecha:</b> ${fmtD(a.fecha)}</div><div><b>Área:</b> ${esc(a.area||'—')}</div>
+      <div><b>Línea:</b> ${esc(a.linea||'—')}</div><div><b>Equipo:</b> ${esc(a.equipo)}</div><div><b>Cód. SAP:</b> ${esc(a.codSap||'—')}</div>
+      <div><b>OT:</b> ${esc(a.ot||'—')}</div><div><b>Componente:</b> ${esc(a.componente||'—')}</div>
     </div>
+    <div id="cab-edit"></div>
     <p style="margin-top:8px;font-size:.88rem"><b>👥 Equipo del análisis:</b> ${(a.equipoAnalisis&&a.equipoAnalisis.length)?a.equipoAnalisis.filter(p=>p.nombre).map(p=>`${esc(p.nombre)}${p.area?' <span class="cat-tag">'+esc(p.area)+'</span>':''}`).join(' · ')||'—':'—'}</p>
     <p style="font-size:.88rem"><b>🔧 Participantes en la reparación:</b> ${(a.participantes&&a.participantes.length)?a.participantes.filter(p=>p.nombre).map(p=>`${esc(p.nombre)} <span class="cat-tag">${esc(p.rol||'')}</span>`).join(' · ')||'—':'—'}</p>
 
@@ -2348,6 +2349,65 @@ function abrirADF(id){
     ${a.estado==='Cerrado'?`<p class="muted" style="margin-top:12px">🔒 Cerrado por ${esc(a.cerradoPor)} · ${fmtDT(a.cerradoAt)}</p>`:''}
   `;
   $('modal-detalle').classList.add('open');
+}
+
+// Edición rápida de cabecera (Folio, Área, Línea, Equipo, SAP, Síntoma, Modo de falla)
+function editarCabecera(id){
+  const a=_cache.adfs.find(x=>x.id===id); if(!a) return;
+  const z=$('cab-edit'); if(!z) return;
+  if(z.dataset.open==='1'){ z.innerHTML=''; z.dataset.open='0'; return; }
+  z.dataset.open='1';
+  z.innerHTML=`
+    <div class="cab-form">
+      <div class="cab-grid">
+        <div class="field"><label>Folio</label><input id="cf-folio" value="${esc(a.folio||'')}"></div>
+        <div class="field"><label>Área</label><input id="cf-area" value="${esc(a.area||'')}"></div>
+        <div class="field"><label>Línea</label><input id="cf-linea" value="${esc(a.linea||'')}"></div>
+        <div class="field"><label>Equipo</label><input id="cf-equipo" value="${esc(a.equipo||'')}"></div>
+        <div class="field"><label>Cód. SAP</label><input id="cf-sap" value="${esc(a.codSap||'')}"></div>
+      </div>
+      <div class="field"><label>Síntoma</label><textarea id="cf-sintoma">${esc(a.sintoma||'')}</textarea></div>
+      <div class="field"><label>Modo de falla</label><textarea id="cf-modo">${esc(a.modoFalla||'')}</textarea></div>
+      <div style="display:flex;gap:8px;margin-top:6px">
+        <button class="btn-ghost btn-sm" onclick="autoCabecera('${a.id}')">🔎 Autocompletar Área/Línea/SAP desde el equipo</button>
+        <button class="btn-green btn-sm" onclick="guardarCabecera('${a.id}')">💾 Guardar</button>
+        <button class="btn-ghost btn-sm" onclick="editarCabecera('${a.id}')">Cancelar</button>
+      </div>
+    </div>`;
+}
+
+// Rellena Área/Línea/SAP a partir del nombre de equipo escrito (sin guardar)
+function autoCabecera(id){
+  const eq=$('cf-equipo')?.value||'';
+  const mq=inferirMaquina(eq);
+  if(!mq){ toast('No encontré ese equipo en el catálogo.','err'); return; }
+  if($('cf-area'))  $('cf-area').value  = mq.area || $('cf-area').value;
+  if($('cf-linea')) $('cf-linea').value = mq.linea || $('cf-linea').value;
+  if($('cf-sap'))   $('cf-sap').value   = mq.sap || $('cf-sap').value;
+  toast('Área/Línea/SAP completados desde el catálogo.','ok');
+}
+
+async function guardarCabecera(id){
+  const a=_cache.adfs.find(x=>x.id===id); if(!a) return;
+  const campos={
+    folio:   ($('cf-folio')?.value||'').trim(),
+    area:    ($('cf-area')?.value||'').trim(),
+    linea:   ($('cf-linea')?.value||'').trim(),
+    equipo:  ($('cf-equipo')?.value||'').trim(),
+    codSap:  ($('cf-sap')?.value||'').trim(),
+    sintoma: ($('cf-sintoma')?.value||'').trim(),
+    modoFalla:($('cf-modo')?.value||'').trim(),
+    updatedAt:new Date().toISOString(),
+  };
+  if(!campos.equipo){ toast('El equipo no puede quedar vacío.','err'); return; }
+  try{
+    await fdb.collection(COL_ADF).doc(id).update(Object.assign({}, campos, {
+      historial:firebase.firestore.FieldValue.arrayUnion({ accion:'Cabecera editada', usuario:CU.name, fecha:new Date().toISOString() }),
+    }));
+    Object.assign(a, campos); if(a.analisis) a.analisis.modoDetectado = campos.modoFalla || a.analisis.modoDetectado;
+    toast('Datos actualizados.','ok');
+    abrirADF(id);
+  }catch(e){ toast('Error al guardar: '+e.message,'err'); }
 }
 
 // Exporta el ADF como informe A3 (horizontal) en una ventana nueva.
@@ -2916,6 +2976,6 @@ async function crearUsuario(){
 Object.assign(window,{ irTab, abrirADF, marcarProbable, editCausa, editPorque, editPlan,
   agregarPlan, editSeg, guardarSeguimiento, cerrarADF, eliminarADF,
   concluirPlan, subirImgSeg, verImagenSeg, subirRespaldo, verRespaldo, exportarA3,
-  descargarPlantillaADF, importarADFExcel,
+  descargarPlantillaADF, importarADFExcel, editarCabecera, autoCabecera, guardarCabecera,
   abrirNuevoPlan, abrirPlanMP, guardarPlanMP, eliminarPlanMP,
   agregarActMP, calcProximaAuto, autoFillPlan });

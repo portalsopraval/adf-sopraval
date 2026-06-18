@@ -2426,6 +2426,13 @@ function editarCabecera(id){
         <div class="field"><label>Equipo</label><input id="cf-equipo" value="${esc(a.equipo||'')}"></div>
         <div class="field"><label>Cód. SAP</label><input id="cf-sap" value="${esc(a.codSap||'')}"></div>
       </div>
+      <div class="cab-grid">
+        <div class="field"><label>Fecha inicio falla</label><input type="date" id="cf-finicio" value="${esc(a.fechaInicio||'')}"></div>
+        <div class="field"><label>Hora inicio</label><input type="time" id="cf-hinicio" value="${esc(a.horaInicio||'')}"></div>
+        <div class="field"><label>Fecha puesta en marcha</label><input type="date" id="cf-fmarcha" value="${esc(a.fechaMarcha||'')}"></div>
+        <div class="field"><label>Hora puesta en marcha</label><input type="time" id="cf-hmarcha" value="${esc(a.horaMarcha||'')}"></div>
+        <div class="field"><label>Min. perdidos</label><input id="cf-min" value="${esc(a.minutosPerdidos||'')}"></div>
+      </div>
       <div class="field"><label>Síntoma</label><textarea id="cf-sintoma">${esc(a.sintoma||'')}</textarea></div>
       <div class="field"><label>Modo de falla</label><textarea id="cf-modo">${esc(a.modoFalla||'')}</textarea></div>
       <div style="display:flex;gap:8px;margin-top:6px">
@@ -2455,6 +2462,11 @@ async function guardarCabecera(id){
     linea:   ($('cf-linea')?.value||'').trim(),
     equipo:  ($('cf-equipo')?.value||'').trim(),
     codSap:  ($('cf-sap')?.value||'').trim(),
+    fechaInicio: ($('cf-finicio')?.value||'').trim(),
+    horaInicio:  ($('cf-hinicio')?.value||'').trim(),
+    fechaMarcha: ($('cf-fmarcha')?.value||'').trim(),
+    horaMarcha:  ($('cf-hmarcha')?.value||'').trim(),
+    minutosPerdidos: ($('cf-min')?.value||'').trim(),
     sintoma: ($('cf-sintoma')?.value||'').trim(),
     modoFalla:($('cf-modo')?.value||'').trim(),
     updatedAt:new Date().toISOString(),

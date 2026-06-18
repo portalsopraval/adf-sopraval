@@ -14,21 +14,27 @@
   function norm(s){ return String(s==null?'':s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/\s+/g,' ').trim(); }
   function splitMulti(v){ return String(v==null?'':v).split('|').map(function(s){return s.trim();}).filter(Boolean); }
 
+  function serialAFecha(n){ var d=new Date(Math.round((n-25569)*86400000)); return isNaN(d.getTime())?'':d.toISOString().slice(0,10); }
   function parseFecha(v){
     if(v==null || v==='') return '';
-    if(typeof v==='number'){ var d=new Date(Math.round((v-25569)*86400000)); return isNaN(d.getTime())?'':d.toISOString().slice(0,10); }
+    if(typeof v==='number') return (v>=20000 && v<=80000) ? serialAFecha(v) : '';
     var s=String(v).trim();
+    if(/^\d+(\.\d+)?$/.test(s)){ var nv=parseFloat(s); return (nv>=20000 && nv<=80000) ? serialAFecha(nv) : ''; } // serial Excel como texto
     var m=s.match(/^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})/);
     if(m) return m[1]+'-'+('0'+m[2]).slice(-2)+'-'+('0'+m[3]).slice(-2);
     m=s.match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{4})/);
     if(m) return m[3]+'-'+('0'+m[2]).slice(-2)+'-'+('0'+m[1]).slice(-2);
     return '';
   }
+  function fraccionAHora(f){ var mins=Math.round(f*1440); return ('0'+Math.floor(mins/60)).slice(-2)+':'+('0'+(mins%60)).slice(-2); }
   function parseHora(v){
     if(v==null || v==='') return '';
-    if(typeof v==='number'){ var mins=Math.round(v*1440); return ('0'+Math.floor(mins/60)).slice(-2)+':'+('0'+(mins%60)).slice(-2); }
-    var m=String(v).trim().match(/(\d{1,2}):(\d{2})/);
-    return m ? ('0'+m[1]).slice(-2)+':'+m[2] : '';
+    if(typeof v==='number') return (v>0 && v<1) ? fraccionAHora(v) : '';
+    var s=String(v).trim();
+    var m=s.match(/(\d{1,2}):(\d{2})/);
+    if(m) return ('0'+m[1]).slice(-2)+':'+m[2];
+    if(/^0?\.\d+$/.test(s)){ var f=parseFloat(s); if(f>0&&f<1) return fraccionAHora(f); } // fracción de día como texto
+    return '';
   }
 
   // Valor que NO puede ser un nombre real (número puro, serial Excel o fecha) -> basura de plantilla
@@ -39,7 +45,9 @@
     if(/^\d{4}-\d{1,2}-\d{1,2}/.test(s)) return true;                   // fecha iso
     return false;
   }
-  function aoa(ws){ return XLSX.utils.sheet_to_json(ws, { header:1, raw:false, defval:'' }); }
+  // raw:true -> las fechas/horas vienen como número de serie Excel (parseFecha/parseHora
+  // las interpretan sin ambigüedad de formato M/D/Y vs D/M/Y); el texto se mantiene como texto.
+  function aoa(ws){ return XLSX.utils.sheet_to_json(ws, { header:1, raw:true, defval:'' }); }
   function cel(grid,r,c){ var row=grid[r]; return (row && row[c]!=null) ? String(row[c]).trim() : ''; }
   // Busca la primera celda cuyo texto normalizado cumple el regex
   function buscar(grid, re, desdeFila){
@@ -64,6 +72,20 @@
     return '';
   }
   function valPorEtiqueta(grid, re, span){ return valDer(grid, buscar(grid, re), span); }
+  // Busca un valor de hora (HH:MM) en la misma fila de una etiqueta de fecha,
+  // aunque no exista una etiqueta "Hora" propia (el valor va suelto junto a la fecha).
+  function horaTrasFecha(grid, fechaRe){
+    var pos=buscar(grid,fechaRe); if(!pos) return '';
+    var row=grid[pos.r]||[];
+    for(var c=pos.c+1; c<pos.c+14 && c<row.length; c++){
+      var raw=row[c]; var v=raw!=null?String(raw).trim():''; if(!v) continue;
+      if(typeof raw==='number' && raw>0 && raw<1) return parseHora(raw); // fracción de día = hora
+      if(/^0?\.\d+$/.test(v)){ var f=parseFloat(v); if(f>0&&f<1) return fraccionAHora(f); }
+      if(/\d{1,2}:\d{2}/.test(v)) return parseHora(v);       // hora HH:MM
+      if(esEtiqueta(v) && !/hora/.test(norm(v))) break;      // llegó a otra sección
+    }
+    return '';
+  }
   // Valor que puede venir escrito DENTRO de la misma celda de la etiqueta
   // (ej. "Descripción de la Avería:\n<texto>") o a la derecha si la celda solo tiene la etiqueta.
   function valCeldaOEtiqueta(grid, re, span){
@@ -180,9 +202,9 @@
       codSap:valPorEtiqueta(grid,/sap/),
       componente:valPorEtiqueta(grid,/componente/),
       fechaInicio:parseFecha(valPorEtiqueta(grid,/fecha inicio/)),
-      horaInicio:parseHora(valPorEtiqueta(grid,/hora inicio/)),
+      horaInicio:parseHora(valPorEtiqueta(grid,/hora inicio/)) || horaTrasFecha(grid,/fecha inicio/),
       fechaMarcha:parseFecha(valPorEtiqueta(grid,/fecha puesta/)),
-      horaMarcha:parseHora(valPorEtiqueta(grid,/hora puesta/)),
+      horaMarcha:parseHora(valPorEtiqueta(grid,/hora puesta/)) || horaTrasFecha(grid,/fecha puesta/),
       minutosPerdidos:valPorEtiqueta(grid,/minutos perdidos/),
       ot:valPorEtiqueta(grid,/^ot$/),
       afectoProduccion:'', tipoProblema:'',

@@ -31,6 +31,14 @@
     return m ? ('0'+m[1]).slice(-2)+':'+m[2] : '';
   }
 
+  // Valor que NO puede ser un nombre real (número puro, serial Excel o fecha) -> basura de plantilla
+  function esBasura(v){
+    var s=String(v==null?'':v).trim(); if(!s) return true;
+    if(/^\d+([.,]\d+)?$/.test(s)) return true;                          // número/serial
+    if(/^\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4}$/.test(s)) return true;    // fecha dd/mm/aa
+    if(/^\d{4}-\d{1,2}-\d{1,2}/.test(s)) return true;                   // fecha iso
+    return false;
+  }
   function aoa(ws){ return XLSX.utils.sheet_to_json(ws, { header:1, raw:false, defval:'' }); }
   function cel(grid,r,c){ var row=grid[r]; return (row && row[c]!=null) ? String(row[c]).trim() : ''; }
   // Busca la primera celda cuyo texto normalizado cumple el regex
@@ -135,8 +143,9 @@
     for(var r=enc.fila+1; r<grid.length; r++){
       var get=function(k){ return m[k]!=null ? cel(grid,r,m[k]) : ''; };
       var equipo=get('equipo'), sintoma=get('sintoma');
-      if(!equipo && !sintoma && !get('codSap') && !get('fecha')) continue; // fila vacía
-      if(!equipo && !sintoma) continue; // sin datos clave -> omitir
+      if(esBasura(equipo)) equipo=''; // un número/fecha no es un nombre de equipo válido
+      if(esBasura(sintoma)) sintoma='';
+      if(!equipo && !sintoma) continue; // sin datos clave reales -> omitir
       var causasTxt=splitMulti(get('causaRaiz')), causas6M=splitMulti(get('causa6M'));
       var planTxt=splitMulti(get('planAccion')), planResp=splitMulti(get('planResponsable')),
           planFec=splitMulti(get('planFecha')), planTipo=splitMulti(get('planTipo'));

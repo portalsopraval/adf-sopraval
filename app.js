@@ -1936,11 +1936,20 @@ function construirGraficos(data, m){
     if(!meses[mk2]) meses[mk2]={n:0,dt:[]}; meses[mk2].n++;
     const dt=downtimeHoras(a); if(dt!=null) meses[mk2].dt.push(dt); });
   const labelsM = Object.keys(meses).sort();
+  const horasMes = labelsM.map(k=>{ const d=meses[k].dt; return Math.round(d.reduce((s,v)=>s+v,0)*10)/10; });
+  const conDatosMes = labelsM.map(k=>meses[k].dt.length);
   mk('ch-tend', { data:{ labels:labelsM,
     datasets:[
       { type:'bar', label:'N° fallas', data:labelsM.map(k=>meses[k].n), backgroundColor:'#2A4A9B', yAxisID:'y' },
       { type:'line', label:'MTTR (h)', data:labelsM.map(k=>{const d=meses[k].dt; return d.length?Math.round(d.reduce((s,v)=>s+v,0)/d.length*10)/10:null;}), borderColor:'#F07B1B', backgroundColor:'#F07B1B', tension:.3, yAxisID:'y1' } ] },
     options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{ tooltip:{ callbacks:{
+        label:(c)=> c.dataset.type==='line'
+          ? 'MTTR (promedio): '+(c.parsed.y!=null? c.parsed.y+' h' : 'sin datos')
+          : 'N° fallas: '+c.parsed.y,
+        afterBody:(items)=>{ const i=items[0].dataIndex;
+          return ['⏱ Horas reparación acumuladas: '+horasMes[i]+' h', '('+conDatosMes[i]+' falla(s) con tiempo registrado)']; }
+      }}},
       scales:{ y:{position:'left',title:{display:true,text:'Fallas'},beginAtZero:true},
         y1:{position:'right',title:{display:true,text:'MTTR (h)'},grid:{drawOnChartArea:false},beginAtZero:true} } } });
 

@@ -2115,12 +2115,16 @@ async function importarADFExcel(input){
   if(!file) return;
   toast('Leyendo archivo…','info');
   try{
-    const buf  = await file.arrayBuffer();
-    const wb   = XLSX.read(buf, { type:'array' });
-    const ws   = wb.Sheets[wb.SheetNames[0]];
-    const rows = XLSX.utils.sheet_to_json(ws, { raw:false, defval:'' })
-                     .filter(r => Object.values(r).some(v => String(v).trim()!==''));
-    if(!rows.length){ toast('El archivo no tiene filas con datos.','err'); input.value=''; return; }
+    const buf = await file.arrayBuffer();
+    const wb  = XLSX.read(buf, { type:'array' });
+
+    // Autodetección de formato (plantilla / antiguo / nuevo) vía adf-import.js
+    if(typeof ADFImport === 'undefined'){ toast('No se cargó el lector de formatos (adf-import.js).','err'); input.value=''; return; }
+    const lectura = ADFImport.leer(wb);
+    if(!lectura.registros.length){
+      toast((lectura.formato? '📄 Formato reconocido: '+lectura.formato+'. ' : '') + (lectura.aviso||'Sin datos para importar.'), lectura.formato?'info':'err');
+      input.value=''; return;
+    }
 
     const cref  = fdb.collection(COL_CFG).doc('folio_counter');
     const csnap = await cref.get();
@@ -2130,56 +2134,41 @@ async function importarADFExcel(input){
     const nowISO = new Date().toISOString();
 
     const docs = [];
-    let omit = 0;
-    for(const r of rows){
-      const equipo  = String(rowGet(r,['Equipo'])).trim();
-      const sintoma = String(rowGet(r,['Sintoma','Síntoma'])).trim();
-      if(!equipo || !sintoma){ omit++; continue; }
-
-      let folio = String(rowGet(r,['Folio'])).trim();
+    for(const reg of lectura.registros){
+      let folio = String(reg.folio||'').trim();
       if(!folio){ n++; folio = 'ADF-'+year+'-'+String(n).padStart(3,'0'); }
 
-      const causasTxt = splitMulti(rowGet(r,['Causa raiz','Causa raíz']));
-      const causas6M  = splitMulti(rowGet(r,['6M causa','6M']));
-      const causas = causasTxt.map((txt,i)=>({ txt, probable:true, cat: causas6M[i] || categoria6M(txt), origen:'Importado' }));
+      const causas = (reg.causas||[]).filter(c=>c && c.txt).map(c=>({
+        txt:c.txt, probable: c.probable!==false, cat: c.cat || categoria6M(c.txt), origen:'Importado',
+      }));
+      const planes = (reg.planes||[]).filter(p=>p && p.actividad).map(p=>({
+        actividad:p.actividad, tipo:(p.tipo||'PERMANENTE').toUpperCase(), responsable:p.responsable||'', fecha:p.fecha||'',
+      }));
+      const partic = (reg.participantes||[]).filter(p=>p && p.nombre).map(p=>({ nombre:p.nombre, rol:'', area:p.area||'' }));
 
-      const planAct  = splitMulti(rowGet(r,['Plan de accion','Plan de acción']));
-      const planResp = splitMulti(rowGet(r,['Responsable plan']));
-      const planFec  = splitMulti(rowGet(r,['Fecha compromiso plan']));
-      const planTipo = splitMulti(rowGet(r,['Tipo plan']));
-      const planes = planAct.map((actividad,i)=>({ actividad, tipo:(planTipo[i]||'PERMANENTE').toUpperCase(), responsable:planResp[i]||'', fecha:parseFechaADF(planFec[i]||'') }));
-
-      const partic = splitMulti(rowGet(r,['Participantes'])).map(nombre=>({ nombre, rol:'' }));
-
-      const estado    = String(rowGet(r,['Estado'])).trim();
-      const esCerrado = estado ? norm(estado).startsWith('cerrad') : true;
-      const modoFalla = String(rowGet(r,['Modo de falla'])).trim();
-      const fechaReg  = parseFechaADF(rowGet(r,['Fecha registro'])) || parseFechaADF(rowGet(r,['Fecha inicio falla'])) || nowISO.slice(0,10);
+      const esCerrado = reg.estado ? norm(reg.estado).startsWith('cerrad') : true;
+      const modoFalla = reg.modoFalla||'';
+      const fechaReg  = reg.fecha || reg.fechaInicio || nowISO.slice(0,10);
       const id = uid();
 
       docs.push({ id, data: {
         id, folio, fecha: fechaReg,
-        area: String(rowGet(r,['Area','Área'])).trim(),
-        linea: String(rowGet(r,['Linea','Línea'])).trim(),
-        equipo,
-        codSap: String(rowGet(r,['Cod SAP','Codigo SAP','SAP'])).trim(),
-        componente: String(rowGet(r,['Componente'])).trim(),
-        fechaInicio: parseFechaADF(rowGet(r,['Fecha inicio falla'])),
-        horaInicio:  parseHoraADF(rowGet(r,['Hora inicio'])),
-        fechaMarcha: parseFechaADF(rowGet(r,['Fecha puesta en marcha'])),
-        horaMarcha:  parseHoraADF(rowGet(r,['Hora puesta en marcha'])),
-        minutosPerdidos: String(rowGet(r,['Minutos perdidos produccion','Minutos perdidos'])).trim(),
-        ot: String(rowGet(r,['OT'])).trim(),
-        afectoProduccion: norm(rowGet(r,['Afecto produccion','Afectó producción'])).startsWith('s') ? 'Sí' : 'No',
-        tipoProblema: norm(rowGet(r,['Tipo problema'])).startsWith('recur') ? 'Recurrente' : 'Esporádico',
-        sintoma, modoFalla,
-        accionCorrectiva: String(rowGet(r,['Accion correctiva','Acción correctiva'])).trim(),
+        area: reg.area||'', linea: reg.linea||'', equipo: reg.equipo||'',
+        codSap: reg.codSap||'', componente: reg.componente||'',
+        fechaInicio: reg.fechaInicio||'', horaInicio: reg.horaInicio||'',
+        fechaMarcha: reg.fechaMarcha||'', horaMarcha: reg.horaMarcha||'',
+        minutosPerdidos: reg.minutosPerdidos||'', ot: reg.ot||'',
+        afectoProduccion: norm(reg.afectoProduccion||'').startsWith('s') ? 'Sí' : 'No',
+        tipoProblema: norm(reg.tipoProblema||'').startsWith('recur') ? 'Recurrente' : 'Esporádico',
+        sintoma: reg.sintoma||'', modoFalla,
+        accionCorrectiva: reg.accionCorrectiva||'',
         participantes: partic,
-        equipoAnalisis: partic.map(p=>({ nombre:p.nombre, area:'', autor:false })),
-        w_que:'', w_cuando:'', w_donde:'', w_quien:'', w_cual:'', w_como:'',
+        equipoAnalisis: partic.map(p=>({ nombre:p.nombre, area:p.area||'', autor:false })),
+        w_que: reg.w_que||'', w_cuando: reg.w_cuando||'', w_donde: reg.w_donde||'',
+        w_quien: reg.w_quien||'', w_cual: reg.w_cual||'', w_como: reg.w_como||'',
         imagen:'',
         condiciones:{ estado:'', estadoOtro:'', turno:'', pmVencido:'No', intervencion:'No', intervencionDet:'', fueraParam:'No', fueraParamDet:'' },
-        analisis:{ modoDetectado: modoFalla, tipoEquipo:[], modosMixtos:[], causas, porques:[], planes },
+        analisis:{ modoDetectado: modoFalla, tipoEquipo:[], modosMixtos:[], causas, porques:(reg.porques||[]).filter(Boolean), planes },
         estado: esCerrado ? 'Cerrado' : 'PlanAccion',
         creadorId:CU.id, creadorEmail:CU.email, creadorNombre:CU.name,
         createdAt:nowISO, updatedAt:nowISO,
@@ -2187,11 +2176,11 @@ async function importarADFExcel(input){
         evidencias:'',
         cerradoPor: esCerrado?CU.name:'', cerradoAt: esCerrado?nowISO:'',
         importado:true,
-        historial:[{ accion:'Importado desde Excel', usuario:CU.name, fecha:nowISO }],
+        historial:[{ accion:'Importado desde Excel ('+(lectura.formato||'')+')', usuario:CU.name, fecha:nowISO }],
       }});
     }
 
-    if(!docs.length){ toast('No se encontraron filas válidas (falta Equipo o Síntoma).','err'); input.value=''; return; }
+    if(!docs.length){ toast('No se encontraron registros válidos (falta Equipo o Síntoma).','err'); input.value=''; return; }
 
     // Escritura por lotes (máx 500 ops por batch de Firestore)
     for(let i=0; i<docs.length; i+=400){
@@ -2201,7 +2190,7 @@ async function importarADFExcel(input){
       await batch.commit();
     }
 
-    toast(`✅ ${docs.length} ADF importados${omit?` · ${omit} fila(s) omitidas`:''}.`,'ok');
+    toast(`✅ ${docs.length} ADF importados · Formato: ${lectura.formato}.`,'ok');
     irTab('listado');
   }catch(e){
     toast('Error al importar: '+e.message,'err');

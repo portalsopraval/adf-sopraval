@@ -912,7 +912,7 @@ function renderInicio(){
 // Mini-panel de indicadores del mes actual (solo admins)
 function miniIndicadoresMes(){
   const mesActual = new Date().toISOString().slice(0,7);
-  const data = misADFs().filter(a=>(a.fecha||'').slice(0,7)===mesActual);
+  const data = misADFs().filter(a=>((a.fechaInicio||a.fecha)||'').slice(0,7)===mesActual);
   const m = calcConfiabilidad(data);
   const dc = DISP_COLOR(m.dispGlobal);
   const nombreMes = new Date().toLocaleDateString('es-CL',{month:'long',year:'numeric'});
@@ -1786,8 +1786,8 @@ const PALETA = ['#1B3580','#F07B1B','#2A4A9B','#15803D','#B91C1C','#B45309','#02
 function indADFsFiltrados(){
   let data = misADFs();
   if(_indFiltro.area)  data = data.filter(a=>normArea(a.area)===_indFiltro.area);
-  if(_indFiltro.desde) data = data.filter(a=>(a.fecha||'') >= _indFiltro.desde);
-  if(_indFiltro.hasta) data = data.filter(a=>(a.fecha||'') <= _indFiltro.hasta);
+  if(_indFiltro.desde) data = data.filter(a=>((a.fechaInicio||a.fecha)||'') >= _indFiltro.desde);
+  if(_indFiltro.hasta) data = data.filter(a=>((a.fechaInicio||a.fecha)||'') <= _indFiltro.hasta);
   return data;
 }
 
@@ -1932,7 +1932,7 @@ function construirGraficos(data, m){
 
   // Tendencia mensual: fallas (barra) + MTTR (línea)
   const meses = {};
-  data.forEach(a=>{ const mk2=(a.fecha||'').slice(0,7); if(!mk2) return;
+  data.forEach(a=>{ const mk2=((a.fechaInicio||a.fecha)||'').slice(0,7); if(!mk2) return;
     if(!meses[mk2]) meses[mk2]={n:0,dt:[]}; meses[mk2].n++;
     const dt=downtimeHoras(a); if(dt!=null) meses[mk2].dt.push(dt); });
   const labelsM = Object.keys(meses).sort();

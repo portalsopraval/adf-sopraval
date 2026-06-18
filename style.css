@@ -109,6 +109,9 @@ button:disabled { opacity:.5; cursor:not-allowed; }
 .tab-pane.active { display:block; }
 .page-title { font-size:1.4rem; font-weight:800; color:var(--blue); margin-bottom:4px; }
 .page-sub { font-size:.9rem; color:var(--gray); margin-bottom:22px; }
+.imp-bar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin:-8px 0 18px; }
+.imp-file { cursor:pointer; display:inline-flex; align-items:center; }
+.imp-file input { display:none; }
 
 /* ── Cards ── */
 .card { background:var(--white); border-radius:var(--radius); box-shadow:var(--shadow-sm);

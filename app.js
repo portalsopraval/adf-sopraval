@@ -928,6 +928,12 @@ function renderListado(){
   $('pane-listado').innerHTML = `
     <div class="page-title">${esLider()?'Todos los ADF':'Mis ADF'}</div>
     <div class="page-sub">${data.length} registro(s) de análisis de falla</div>
+    ${esAdmin()?`<div class="imp-bar">
+      <button class="btn-ghost btn-sm" onclick="descargarPlantillaADF()">⬇ Plantilla Excel</button>
+      <label class="btn-primary btn-sm imp-file">📥 Importar ADF terminados
+        <input type="file" accept=".xlsx,.xls" onchange="importarADFExcel(this)">
+      </label>
+    </div>`:''}
     ${tablaADF(data)}
   `;
 }
@@ -2017,6 +2023,191 @@ function exportarIndicadoresExcel(data, m, ex){
   toast('Excel generado.','ok');
 }
 
+/* ═══════════════════════════════════════════════════════════
+   IMPORTAR ADF TERMINADOS DESDE EXCEL  (solo admins)
+   ═══════════════════════════════════════════════════════════ */
+const IMP_HEADERS = [
+  'Folio','Fecha registro','Area','Linea','Equipo','Cod SAP','Componente',
+  'Fecha inicio falla','Hora inicio','Fecha puesta en marcha','Hora puesta en marcha',
+  'Minutos perdidos produccion','Tipo problema','Afecto produccion','OT',
+  'Sintoma','Modo de falla','Accion correctiva',
+  'Causa raiz','6M causa','Plan de accion','Responsable plan','Fecha compromiso plan','Tipo plan',
+  'Participantes','Estado',
+];
+
+function descargarPlantillaADF(){
+  const ej1 = [
+    'ADF-2025-001','15-03-2025','Faena','Línea 1','Bomba centrífuga agua','SAP-10234','Sello mecánico',
+    '15-03-2025','08:30','15-03-2025','11:00',
+    '150','Esporádico','Sí','OT-5567',
+    'Fuga de agua por el sello con goteo continuo','Pérdida de estanqueidad del sello mecánico','Reemplazo de sello y O-ring',
+    'Sello desgastado por horas de servicio | Desalineación eje-acople','Máquina | Máquina',
+    'Cambiar sello mecánico | Verificar alineación con reloj comparador','Juan Pérez | Pedro Soto','30-03-2025 | 05-04-2025','PERMANENTE | PREVENTIVO',
+    'Juan Pérez | Pedro Soto','Cerrado',
+  ];
+  const ej2 = [
+    '','20-04-2025','Faena','Línea 2','Transportador de tornillo','SAP-20891','Motorreductor',
+    '20-04-2025','14:00','20-04-2025','16:30',
+    '90','Recurrente','Sí','OT-5612',
+    'Motor con sobrecalentamiento y ruido en el rodamiento','Detención por protección térmica','Cambio de rodamiento y limpieza',
+    'Rodamiento sin lubricación | Sobrecarga por atasco de producto','Máquina | Método',
+    'Programar lubricación mensual | Instalar sensor de nivel','Equipo Mant.','15-05-2025','PREVENTIVO',
+    'Carlos Rojas','Cerrado',
+  ];
+  const instr = [
+    ['INSTRUCCIONES — Importación de ADF terminados'],
+    [],
+    ['• Completa una fila por cada ADF en la hoja "ADF". No cambies los títulos de las columnas.'],
+    ['• Obligatorios: Equipo y Síntoma. Si falta alguno, la fila se omite.'],
+    ['• Para buenos indicadores (MTTR / disponibilidad) completa las 4 fechas/horas de falla.'],
+    ['• Fechas en formato dd-mm-aaaa (ej: 15-03-2025). Horas en HH:MM (ej: 08:30).'],
+    ['• Folio: déjalo vacío para que el sistema lo genere automáticamente.'],
+    ['• Tipo problema: "Esporádico" o "Recurrente".  Afectó producción: "Sí" o "No".'],
+    ['• Estado: "Cerrado" (ya resuelto) o "PlanAccion" (en seguimiento). Por defecto Cerrado.'],
+    [],
+    ['CAMPOS CON VARIOS VALORES — separa cada uno con la barra vertical  |'],
+    ['• Causa raíz:  Causa 1 | Causa 2 | Causa 3'],
+    ['• 6M causa (en el mismo orden que las causas): Máquina | Método | Mano de obra | Material | Medición | Medio ambiente'],
+    ['• Plan de acción / Responsable plan / Fecha compromiso plan / Tipo plan: van en paralelo, mismo orden.'],
+    ['• Participantes: Nombre 1 | Nombre 2'],
+    [],
+    ['Tipo plan sugerido: PERMANENTE / PREVENTIVO / CORRECTIVO / PROVISORIO.'],
+  ];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([IMP_HEADERS, ej1, ej2]), 'ADF');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(instr), 'Instrucciones');
+  XLSX.writeFile(wb, 'Plantilla_ADF_Sopraval.xlsx');
+  toast('Plantilla descargada. Complétala y luego usa "Importar ADF".','ok');
+}
+
+function rowGet(row, candidatos){
+  const map = {};
+  for(const k in row) map[norm(k)] = row[k];
+  for(const c of candidatos){ const nc = norm(c); if(map[nc]!=null && String(map[nc]).trim()!=='') return map[nc]; }
+  return '';
+}
+function splitMulti(v){
+  return String(v||'').split('|').map(s=>s.trim()).filter(Boolean);
+}
+function parseFechaADF(v){
+  if(v==null || v==='') return '';
+  if(typeof v==='number'){ // serial de Excel
+    const d = new Date(Math.round((v-25569)*86400000));
+    return isNaN(d.getTime()) ? '' : d.toISOString().slice(0,10);
+  }
+  const s = String(v).trim();
+  let m = s.match(/^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})/);
+  if(m) return `${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;
+  m = s.match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{4})/);
+  if(m) return `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
+  return '';
+}
+function parseHoraADF(v){
+  if(v==null || v==='') return '';
+  if(typeof v==='number'){ const mins=Math.round(v*1440); return String(Math.floor(mins/60)).padStart(2,'0')+':'+String(mins%60).padStart(2,'0'); }
+  const m = String(v).trim().match(/(\d{1,2}):(\d{2})/);
+  return m ? m[1].padStart(2,'0')+':'+m[2] : '';
+}
+
+async function importarADFExcel(input){
+  if(!esAdmin()){ toast('Solo administradores pueden importar ADF.','err'); input.value=''; return; }
+  const file = input.files && input.files[0];
+  if(!file) return;
+  toast('Leyendo archivo…','info');
+  try{
+    const buf  = await file.arrayBuffer();
+    const wb   = XLSX.read(buf, { type:'array' });
+    const ws   = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(ws, { raw:false, defval:'' })
+                     .filter(r => Object.values(r).some(v => String(v).trim()!==''));
+    if(!rows.length){ toast('El archivo no tiene filas con datos.','err'); input.value=''; return; }
+
+    const cref  = fdb.collection(COL_CFG).doc('folio_counter');
+    const csnap = await cref.get();
+    const year  = new Date().getFullYear();
+    const nBase = csnap.exists ? (csnap.data().n||0) : 0;
+    let n = nBase;
+    const nowISO = new Date().toISOString();
+
+    const docs = [];
+    let omit = 0;
+    for(const r of rows){
+      const equipo  = String(rowGet(r,['Equipo'])).trim();
+      const sintoma = String(rowGet(r,['Sintoma','Síntoma'])).trim();
+      if(!equipo || !sintoma){ omit++; continue; }
+
+      let folio = String(rowGet(r,['Folio'])).trim();
+      if(!folio){ n++; folio = 'ADF-'+year+'-'+String(n).padStart(3,'0'); }
+
+      const causasTxt = splitMulti(rowGet(r,['Causa raiz','Causa raíz']));
+      const causas6M  = splitMulti(rowGet(r,['6M causa','6M']));
+      const causas = causasTxt.map((txt,i)=>({ txt, probable:true, cat: causas6M[i] || categoria6M(txt), origen:'Importado' }));
+
+      const planAct  = splitMulti(rowGet(r,['Plan de accion','Plan de acción']));
+      const planResp = splitMulti(rowGet(r,['Responsable plan']));
+      const planFec  = splitMulti(rowGet(r,['Fecha compromiso plan']));
+      const planTipo = splitMulti(rowGet(r,['Tipo plan']));
+      const planes = planAct.map((actividad,i)=>({ actividad, tipo:(planTipo[i]||'PERMANENTE').toUpperCase(), responsable:planResp[i]||'', fecha:parseFechaADF(planFec[i]||'') }));
+
+      const partic = splitMulti(rowGet(r,['Participantes'])).map(nombre=>({ nombre, rol:'' }));
+
+      const estado    = String(rowGet(r,['Estado'])).trim();
+      const esCerrado = estado ? norm(estado).startsWith('cerrad') : true;
+      const modoFalla = String(rowGet(r,['Modo de falla'])).trim();
+      const fechaReg  = parseFechaADF(rowGet(r,['Fecha registro'])) || parseFechaADF(rowGet(r,['Fecha inicio falla'])) || nowISO.slice(0,10);
+      const id = uid();
+
+      docs.push({ id, data: {
+        id, folio, fecha: fechaReg,
+        area: String(rowGet(r,['Area','Área'])).trim(),
+        linea: String(rowGet(r,['Linea','Línea'])).trim(),
+        equipo,
+        codSap: String(rowGet(r,['Cod SAP','Codigo SAP','SAP'])).trim(),
+        componente: String(rowGet(r,['Componente'])).trim(),
+        fechaInicio: parseFechaADF(rowGet(r,['Fecha inicio falla'])),
+        horaInicio:  parseHoraADF(rowGet(r,['Hora inicio'])),
+        fechaMarcha: parseFechaADF(rowGet(r,['Fecha puesta en marcha'])),
+        horaMarcha:  parseHoraADF(rowGet(r,['Hora puesta en marcha'])),
+        minutosPerdidos: String(rowGet(r,['Minutos perdidos produccion','Minutos perdidos'])).trim(),
+        ot: String(rowGet(r,['OT'])).trim(),
+        afectoProduccion: norm(rowGet(r,['Afecto produccion','Afectó producción'])).startsWith('s') ? 'Sí' : 'No',
+        tipoProblema: norm(rowGet(r,['Tipo problema'])).startsWith('recur') ? 'Recurrente' : 'Esporádico',
+        sintoma, modoFalla,
+        accionCorrectiva: String(rowGet(r,['Accion correctiva','Acción correctiva'])).trim(),
+        participantes: partic,
+        equipoAnalisis: partic.map(p=>({ nombre:p.nombre, area:'', autor:false })),
+        w_que:'', w_cuando:'', w_donde:'', w_quien:'', w_cual:'', w_como:'',
+        imagen:'',
+        condiciones:{ estado:'', estadoOtro:'', turno:'', pmVencido:'No', intervencion:'No', intervencionDet:'', fueraParam:'No', fueraParamDet:'' },
+        analisis:{ modoDetectado: modoFalla, tipoEquipo:[], modosMixtos:[], causas, porques:[], planes },
+        estado: esCerrado ? 'Cerrado' : 'PlanAccion',
+        creadorId:CU.id, creadorEmail:CU.email, creadorNombre:CU.name,
+        createdAt:nowISO, updatedAt:nowISO,
+        seguimiento: planes.map(p=>({ actividad:p.actividad, fechaSolucion: esCerrado?(p.fecha||fechaReg):'', realizado: esCerrado?p.actividad:'', hecho:esCerrado, imagen:'', comentario: esCerrado?'Importado':'' })),
+        evidencias:'',
+        cerradoPor: esCerrado?CU.name:'', cerradoAt: esCerrado?nowISO:'',
+        importado:true,
+        historial:[{ accion:'Importado desde Excel', usuario:CU.name, fecha:nowISO }],
+      }});
+    }
+
+    if(!docs.length){ toast('No se encontraron filas válidas (falta Equipo o Síntoma).','err'); input.value=''; return; }
+
+    // Escritura por lotes (máx 500 ops por batch de Firestore)
+    for(let i=0; i<docs.length; i+=400){
+      const batch = fdb.batch();
+      docs.slice(i, i+400).forEach(d => batch.set(fdb.collection(COL_ADF).doc(d.id), d.data));
+      if(i + 400 >= docs.length && n !== nBase) batch.set(cref, { n, year }, { merge:true });
+      await batch.commit();
+    }
+
+    toast(`✅ ${docs.length} ADF importados${omit?` · ${omit} fila(s) omitidas`:''}.`,'ok');
+    irTab('listado');
+  }catch(e){
+    toast('Error al importar: '+e.message,'err');
+  }finally{ input.value=''; }
+}
+
 /* ── Exportar a PDF ── */
 async function exportarIndicadoresPDF(nombreArchivo){
   const node = $('ind-capture');
@@ -2720,5 +2911,6 @@ async function crearUsuario(){
 Object.assign(window,{ irTab, abrirADF, marcarProbable, editCausa, editPorque, editPlan,
   agregarPlan, editSeg, guardarSeguimiento, cerrarADF, eliminarADF,
   concluirPlan, subirImgSeg, verImagenSeg, subirRespaldo, verRespaldo, exportarA3,
+  descargarPlantillaADF, importarADFExcel,
   abrirNuevoPlan, abrirPlanMP, guardarPlanMP, eliminarPlanMP,
   agregarActMP, calcProximaAuto, autoFillPlan });

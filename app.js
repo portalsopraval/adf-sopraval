@@ -933,7 +933,7 @@ function renderListado(){
       <label class="btn-primary btn-sm imp-file">📥 Importar ADF terminados
         <input type="file" accept=".xlsx,.xls" onchange="importarADFExcel(this)">
       </label>
-      <button class="btn-ghost btn-sm" onclick="normalizarAreasGuardadas()">🧹 Normalizar áreas</button>
+      <button class="btn-ghost btn-sm" onclick="normalizarAreasGuardadas()">🧹 Corregir áreas (catálogo)</button>
     </div>`:''}
     ${tablaADF(data)}
   `;
@@ -2127,19 +2127,34 @@ function inferirMaquina(equipo){
   return m||null;
 }
 
-// Limpieza única: pasa a MAYÚSCULAS las áreas ya guardadas (unifica "Faena"/"FAENA")
+// Busca la máquina del catálogo de un ADF: primero por SAP (exacto), luego por nombre de equipo
+function maquinaDe(a){
+  if(typeof MAQUINAS_PLANTA==='undefined') return null;
+  if(a.codSap){ const m=MAQUINAS_PLANTA.find(x=>String(x.sap)===String(a.codSap).trim()); if(m) return m; }
+  return inferirMaquina(a.equipo);
+}
+
+// Limpieza: pasa el área a MAYÚSCULAS y, si el equipo está en el catálogo, la corrige
+// según el catálogo (autoritativo). Así "Faena" en un equipo de PROCESOS se reasigna a PROCESOS.
 async function normalizarAreasGuardadas(){
   if(!esAdmin()){ toast('Solo administradores.','err'); return; }
-  const pend = _cache.adfs.filter(a=> a.area && a.area !== normArea(a.area));
-  if(!pend.length){ toast('Las áreas ya están normalizadas.','ok'); return; }
-  if(!confirm(`Se normalizarán ${pend.length} ADF (área a MAYÚSCULAS). ¿Continuar?`)) return;
+  const pend=[];
+  _cache.adfs.forEach(a=>{
+    const mq=maquinaDe(a);
+    const na = (mq && mq.area) ? normArea(mq.area) : normArea(a.area);
+    const nl = (mq && mq.linea) ? mq.linea : (a.linea||'');
+    if((na && na!==a.area) || (nl && nl!==a.linea)) pend.push({a, na, nl});
+  });
+  if(!pend.length){ toast('Las áreas ya están correctas.','ok'); return; }
+  const conCatalogo = pend.filter(p=>maquinaDe(p.a)).length;
+  if(!confirm(`Se corregirán ${pend.length} ADF (área a MAYÚSCULAS${conCatalogo?`; ${conCatalogo} además según el catálogo de equipos`:''}). ¿Continuar?`)) return;
   try{
     for(let i=0;i<pend.length;i+=400){
       const batch = fdb.batch();
-      pend.slice(i,i+400).forEach(a=>{ const na=normArea(a.area); batch.update(fdb.collection(COL_ADF).doc(a.id), { area:na, updatedAt:new Date().toISOString() }); a.area=na; });
+      pend.slice(i,i+400).forEach(p=>{ batch.update(fdb.collection(COL_ADF).doc(p.a.id), { area:p.na, linea:p.nl, updatedAt:new Date().toISOString() }); p.a.area=p.na; p.a.linea=p.nl; });
       await batch.commit();
     }
-    toast(`✅ ${pend.length} áreas normalizadas.`,'ok');
+    toast(`✅ ${pend.length} ADF corregidos.`,'ok');
     if($('pane-confiabilidad') && $('pane-confiabilidad').classList.contains('active')) renderConfiabilidad();
     if($('pane-listado') && $('pane-listado').classList.contains('active')) renderListado();
   }catch(e){ toast('Error: '+e.message,'err'); }
@@ -2187,9 +2202,10 @@ async function importarADFExcel(input){
       const fechaReg  = reg.fecha || reg.fechaInicio || nowISO.slice(0,10);
       const id = uid();
 
-      // Si el formato no trae Área/Línea/SAP (ej. ficha nueva), inferir desde el catálogo de máquinas
+      // Área/Línea/SAP: el catálogo de máquinas es autoritativo (por SAP o nombre); evita áreas mal escritas
       let areaR=reg.area||'', lineaR=reg.linea||'', sapR=reg.codSap||'';
-      if(!areaR || !lineaR || !sapR){ const mq=inferirMaquina(reg.equipo); if(mq){ areaR=areaR||mq.area; lineaR=lineaR||mq.linea; sapR=sapR||mq.sap; } }
+      const mqI = (sapR && typeof MAQUINAS_PLANTA!=='undefined' ? MAQUINAS_PLANTA.find(x=>String(x.sap)===String(sapR).trim()) : null) || inferirMaquina(reg.equipo);
+      if(mqI){ areaR=mqI.area||areaR; lineaR=mqI.linea||lineaR; sapR=sapR||mqI.sap; }
       areaR = normArea(areaR);
 
       docs.push({ id, data: {

@@ -2146,11 +2146,139 @@ function abrirADF(id){
       ${a.estado!=='Cerrado'?`<button class="btn-green" onclick="guardarSeguimiento('${a.id}')">💾 Guardar seguimiento</button>`:''}
       ${(esLider() && a.estado!=='Cerrado')?`<button class="btn-primary" onclick="cerrarADF('${a.id}')">🔒 Validar y cerrar ADF</button>`:''}
       ${(esLider() || a.creadorId===CU.id)?`<button class="btn-danger" onclick="eliminarADF('${a.id}')">🗑 Eliminar</button>`:''}
+      <button class="btn-primary" onclick="exportarA3('${a.id}')">📄 Informe A3 / PDF</button>
       <button class="btn-ghost" onclick="window.print()">🖨 Imprimir</button>
     </div>
     ${a.estado==='Cerrado'?`<p class="muted" style="margin-top:12px">🔒 Cerrado por ${esc(a.cerradoPor)} · ${fmtDT(a.cerradoAt)}</p>`:''}
   `;
   $('modal-detalle').classList.add('open');
+}
+
+// Exporta el ADF como informe A3 (horizontal) en una ventana nueva.
+// El usuario puede "Guardar como PDF" y elegir tamaño A3 en el diálogo de impresión.
+function exportarA3(id){
+  const a=_cache.adfs.find(x=>x.id===id); if(!a){ toast('ADF no encontrado.','err'); return; }
+  const an=a.analisis||{};
+  const e=esc;
+  const cel=(label,val)=>`<div class="kv"><span class="k">${label}</span><span class="v">${val||'—'}</span></div>`;
+  const causas=(an.causas||[]);
+  const probables=causas.filter(c=>c.probable);
+  const cond=a.condiciones||{};
+  const equipoAn=(a.equipoAnalisis||[]).filter(p=>p.nombre).map(p=>`${e(p.nombre)}${p.area?' ('+e(p.area)+')':''}`).join(' · ')||'—';
+  const partRep=(a.participantes||[]).filter(p=>p.nombre).map(p=>`${e(p.nombre)} (${e(p.rol||'')})`).join(' · ')||'—';
+
+  const html=`<!DOCTYPE html><html lang="es"><head><meta charset="utf-8">
+  <title>ADF ${e(a.folio||'')} - ${e(a.equipo||'')}</title>
+  <style>
+    @page { size: A3 landscape; margin: 10mm; }
+    *{ box-sizing:border-box; font-family:'Segoe UI',Arial,sans-serif; }
+    body{ margin:0; color:#1f2937; font-size:11px; }
+    .hoja{ width:100%; }
+    .top{ display:flex; align-items:center; justify-content:space-between; border-bottom:3px solid #E8731C; padding-bottom:8px; margin-bottom:10px; }
+    .top h1{ margin:0; font-size:20px; color:#13284B; }
+    .top .sub{ font-size:12px; color:#6b7280; margin-top:2px; }
+    .folio{ text-align:right; }
+    .folio .big{ font-size:22px; font-weight:800; color:#E8731C; }
+    .estado{ display:inline-block; padding:3px 10px; border-radius:12px; font-weight:700; font-size:11px; background:#eef2ff; color:#13284B; }
+    .cols{ display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+    .box{ border:1px solid #d1d5db; border-radius:6px; padding:8px 10px; margin-bottom:10px; break-inside:avoid; }
+    .box h2{ margin:0 0 6px; font-size:12px; color:#13284B; border-bottom:1px solid #e5e7eb; padding-bottom:4px; }
+    .kv{ display:flex; gap:6px; margin:2px 0; }
+    .kv .k{ font-weight:700; min-width:120px; color:#374151; }
+    .kv .v{ flex:1; }
+    table{ width:100%; border-collapse:collapse; font-size:10.5px; }
+    th,td{ border:1px solid #d1d5db; padding:4px 6px; text-align:left; vertical-align:top; }
+    th{ background:#13284B; color:#fff; font-weight:700; }
+    .tag{ display:inline-block; background:#eef2ff; color:#13284B; border-radius:8px; padding:0 6px; font-size:9px; font-weight:700; }
+    .prob{ background:#fff4e8; }
+    .prob td:first-child{ border-left:3px solid #E8731C; }
+    ol{ margin:4px 0; padding-left:18px; } ol li{ margin:3px 0; }
+    .foot{ margin-top:8px; border-top:1px solid #e5e7eb; padding-top:5px; font-size:9px; color:#9ca3af; display:flex; justify-content:space-between; }
+    .full{ grid-column:1 / -1; }
+  </style></head><body><div class="hoja">
+
+    <div class="top">
+      <div>
+        <h1>Análisis de Falla (ADF)</h1>
+        <div class="sub">Sopraval · Reporte de análisis de causa raíz</div>
+      </div>
+      <div class="folio">
+        <div class="big">${e(a.folio||'—')}</div>
+        <div class="estado">${e(a.estado||'—')}${a.tipoProblema?' · '+e(a.tipoProblema):''}</div>
+      </div>
+    </div>
+
+    <div class="cols">
+      <div class="box">
+        <h2>1 · Datos generales</h2>
+        ${cel('Fecha', fmtD(a.fecha))}
+        ${cel('Área / Línea', e(a.area||'—')+' / '+e(a.linea||'—'))}
+        ${cel('Equipo', e(a.equipo||'—'))}
+        ${cel('Componente', e(a.componente||'—'))}
+        ${cel('Cód. SAP / OT', e(a.codSap||'—')+' / '+e(a.ot||'—'))}
+        ${cel('Min. perdidos', e(a.minutosPerdidos||'0')+' min · Afectó prod.: '+e(a.afectoProduccion||'—'))}
+        ${cel('Equipo del análisis', equipoAn)}
+        ${cel('Participantes reparación', partRep)}
+        ${cel('Creado por', e(a.creadorNombre||'—')+' · '+fmtDT(a.createdAt))}
+      </div>
+      <div class="box">
+        <h2>2 · Avería y condiciones</h2>
+        ${cel('Síntoma', e(a.sintoma||'—'))}
+        ${cel('Modo de falla', e(a.modoFalla||'—'))}
+        ${cel('Acción correctiva', e(a.accionCorrectiva||'—'))}
+        ${cel('Estado al fallar', e(cond.estado||'—')+(cond.estado==='Otro'&&cond.estadoOtro?' — '+e(cond.estadoOtro):''))}
+        ${cel('Turno', e(cond.turno||'—'))}
+        ${cel('PM vencido', e(cond.pmVencido||'—'))}
+        ${cel('Intervención reciente', e(cond.intervencion||'—')+(cond.intervencionDet?' — '+e(cond.intervencionDet):''))}
+        ${cel('Fuera de parámetro', e(cond.fueraParam||'—')+(cond.fueraParamDet?' — '+e(cond.fueraParamDet):''))}
+      </div>
+    </div>
+
+    <div class="box">
+      <h2>3 · Fenómeno (5W + 1H)</h2>
+      <div class="cols">
+        ${cel('¿Qué?', e(a.w_que||'—'))}
+        ${cel('¿Cómo?', e(a.w_como||'—'))}
+        ${cel('¿Dónde?', e(a.w_donde||'—'))}
+        ${cel('¿Cuándo?', e(a.w_cuando||'—'))}
+        ${cel('¿Quién?', e(a.w_quien||'—'))}
+        ${cel('¿Cuál?', e(a.w_cual||'—'))}
+      </div>
+    </div>
+
+    <div class="cols">
+      <div class="box">
+        <h2>4 · Causas analizadas ${an.modoDetectado?'· '+e(an.modoDetectado):''}${(an.tipoEquipo&&an.tipoEquipo.length)?' · '+e(an.tipoEquipo.join(' · ')):''}</h2>
+        <table><thead><tr><th>#</th><th>Causa</th><th>6M</th><th>Origen</th></tr></thead><tbody>
+        ${causas.map((c,i)=>`<tr class="${c.probable?'prob':''}"><td>${i+1}</td><td>${e(c.txt)}${c.probable?' <span class="tag">PROBABLE</span>':''}</td><td>${e(c.cat||'')}</td><td>${e(c.origen||'')}</td></tr>`).join('')||'<tr><td colspan="4">—</td></tr>'}
+        </tbody></table>
+      </div>
+      <div class="box">
+        <h2>5 · 5 Porqués</h2>
+        <ol>${(an.porques||[]).map(p=>`<li>${e(p)}</li>`).join('')||'<li>—</li>'}</ol>
+        ${probables.length?`<h2 style="margin-top:8px">Causas probables (${probables.length})</h2><ol>${probables.map(c=>`<li>${e(c.txt)} <span class="tag">${e(c.cat||'')}</span></li>`).join('')}</ol>`:''}
+      </div>
+    </div>
+
+    <div class="box">
+      <h2>6 · Plan de acción</h2>
+      <table><thead><tr><th style="width:50%">Actividad</th><th>Responsable</th><th>Fecha compromiso</th><th>Tipo</th></tr></thead><tbody>
+      ${(an.planes||[]).map(p=>`<tr><td>${e(p.actividad)}</td><td>${e(p.responsable||'—')}</td><td>${fmtD(p.fecha)}</td><td>${e(p.tipo||'')}</td></tr>`).join('')||'<tr><td colspan="4">—</td></tr>'}
+      </tbody></table>
+    </div>
+
+    <div class="foot">
+      <span>Generado por ${e(CU?.name||'—')} · ${fmtDT(new Date().toISOString())}</span>
+      <span>${e(a.estado==='Cerrado'?('Cerrado por '+(a.cerradoPor||'—')+' · '+fmtDT(a.cerradoAt)):'En proceso')}</span>
+    </div>
+
+  </div>
+  <script>window.onload=function(){ setTimeout(function(){ window.print(); }, 350); };<\/script>
+  </body></html>`;
+
+  const w=window.open('','_blank','width=1200,height=800');
+  if(!w){ toast('Permite las ventanas emergentes para exportar el informe.','err'); return; }
+  w.document.write(html); w.document.close();
 }
 
 function segHTML(a){
@@ -2591,6 +2719,6 @@ async function crearUsuario(){
 // Exponer funciones usadas en onclick inline
 Object.assign(window,{ irTab, abrirADF, marcarProbable, editCausa, editPorque, editPlan,
   agregarPlan, editSeg, guardarSeguimiento, cerrarADF, eliminarADF,
-  concluirPlan, subirImgSeg, verImagenSeg, subirRespaldo, verRespaldo,
+  concluirPlan, subirImgSeg, verImagenSeg, subirRespaldo, verRespaldo, exportarA3,
   abrirNuevoPlan, abrirPlanMP, guardarPlanMP, eliminarPlanMP,
   agregarActMP, calcProximaAuto, autoFillPlan });

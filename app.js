@@ -762,6 +762,11 @@ const SEED_USERS = [
   { email:'lgodoyt@sopraval.cl',     name:'Leonardo Godoy',       role:'tecnico', cargo:'Supervisor Refrigeración',            area:'REFRIGERACION' },
   { email:'ppalmah@agrosuper.com',   name:'Patricio Palma',       role:'tecnico', cargo:'Supervisor Riles / Subproductos',     area:'SUBPRODUCTOS' },
   { email:'ddhernandez@sopraval.cl', name:'Diego Hernández',      role:'tecnico', cargo:'Supervisor Eléctrico / Generación',   area:'GENERACION' },
+  // Jefaturas de mantenimiento (2º nivel de verificación) — su vista se aplica por correo (esJefatura)
+  { email:'gzapata@sopraval.cl',     name:'Gonzalo Zapata',       role:'tecnico', cargo:'Jefatura de Mantenimiento' },
+  { email:'cmadridp@sopraval.cl',    name:'Cristobal Madrid',     role:'tecnico', cargo:'Jefatura de Mantenimiento' },
+  { email:'ccrojas@sopraval.cl',     name:'Cristian Rojas',       role:'tecnico', cargo:'Jefatura de Mantenimiento' },
+  { email:'cllopez@sopraval.cl',     name:'Claudio Lopez',        role:'tecnico', cargo:'Jefatura de Mantenimiento' },
 ];
 const PASS_BASE = 'Sopraval2026';
 

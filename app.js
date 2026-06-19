@@ -754,7 +754,14 @@ function generarAnalisis(adf){
 const SEED_USERS = [
   { email:'jgomezf@sopraval.cl', name:'Jonathan Gómez',  role:'lider',   cargo:'Ingeniero en Confiabilidad' },
   { email:'gvelizm@sopraval.cl', name:'Gino Véliz',      role:'lider',   cargo:'Ingeniero en Mantenimiento' },
-  { email:'tecnico@sopraval.cl', name:'Técnico Sopraval', role:'tecnico', cargo:'Técnico de Mantenimiento' },
+  // Supervisores (crean ADF) — área asociada
+  { email:'gbernal@sopraval.cl',     name:'Gerardo Bernal',       role:'tecnico', cargo:'Supervisor Faena',                    area:'FAENA' },
+  { email:'mparedess@sopraval.cl',   name:'Mauricio Paredes',     role:'tecnico', cargo:'Supervisor Congelado',                area:'CONGELADO' },
+  { email:'mahumadav@sopraval.cl',   name:'Maximiliano Ahumada',  role:'tecnico', cargo:'Supervisor Procesos',                 area:'PROCESOS' },
+  { email:'jvaldenegro@sopraval.cl', name:'Juan Valdenegro',      role:'tecnico', cargo:'Supervisor Suministros',              area:'SUMINISTROS' },
+  { email:'lgodoyt@sopraval.cl',     name:'Leonardo Godoy',       role:'tecnico', cargo:'Supervisor Refrigeración',            area:'REFRIGERACION' },
+  { email:'ppalmah@agosuper.com',    name:'Patricio Palma',       role:'tecnico', cargo:'Supervisor Riles / Subproductos',     area:'SUBPRODUCTOS' },
+  { email:'ddhernandez@sopraval.cl', name:'Diego Hernández',      role:'tecnico', cargo:'Supervisor Eléctrico / Generación',   area:'GENERACION' },
 ];
 const PASS_BASE = 'Sopraval2026';
 
@@ -803,8 +810,8 @@ fauth.onAuthStateChanged(async fbUser=>{
     // crear perfil: usar datos base si es usuario semilla, si no técnico genérico
     const seed = SEED_USERS.find(s=>s.email===email);
     u = seed
-      ? { id:fbUser.uid, email, name:seed.name, role:seed.role, cargo:seed.cargo }
-      : { id:fbUser.uid, email, name:email.split('@')[0], role:'tecnico', cargo:'Técnico de Mantenimiento' };
+      ? { id:fbUser.uid, email, name:seed.name, role:seed.role, cargo:seed.cargo, area:seed.area||'' }
+      : { id:fbUser.uid, email, name:email.split('@')[0], role:'tecnico', cargo:'Supervisor', area:'' };
     await fdb.collection(COL_USERS).doc(u.id).set(u);
     _cache.users.push(u);
   }
@@ -830,7 +837,7 @@ const TABS = {
 function arrancarApp(){
   $('nav-avatar').textContent = initials(CU.name);
   $('nav-name').textContent = CU.name;
-  $('nav-role').textContent = CU.cargo || (CU.role==='lider'?'Líder':'Técnico');
+  $('nav-role').textContent = CU.cargo || (CU.role==='lider'?'Líder':'Supervisor');
   renderTabs();
   escucharADFs();
   if(esLider() || esVistaPMInd()) escucharPlanesMP();
@@ -987,7 +994,7 @@ function tablaADF(list){
    ═══════════════════════════════════════════════════════════ */
 function nuevoBorrador(){
   return {
-    fecha:new Date().toISOString().slice(0,10), area:'', folio:'', linea:'', equipo:'', codSap:'', componente:'',
+    fecha:new Date().toISOString().slice(0,10), area:(CU&&CU.area)||'', folio:'', linea:'', equipo:'', codSap:'', componente:'',
     fechaInicio:'', horaInicio:'', fechaMarcha:'', horaMarcha:'', minutosPerdidos:'',
     ot:'', afectoProduccion:'No', tipoProblema:'Esporádico',
     sintoma:'', modoFalla:'', accionCorrectiva:'',
@@ -3190,15 +3197,15 @@ function renderUsuarios(){
       <thead><tr><th>Nombre</th><th>Correo</th><th>Cargo</th><th>Rol</th></tr></thead>
       <tbody>${_cache.users.map(u=>`<tr>
         <td><b>${esc(u.name)}</b></td><td>${esc(u.email)}</td><td>${esc(u.cargo||'—')}</td>
-        <td>${u.role==='lider'?'<span class="badge b-permanente">Líder</span>':'<span class="badge b-esporadico">Técnico</span>'}</td>
+        <td>${u.role==='lider'?'<span class="badge b-permanente">Líder</span>':'<span class="badge b-esporadico">Supervisor</span>'}</td>
       </tr>`).join('')}</tbody>
     </table></div>
     <div class="card" style="margin-top:18px">
-      <div class="card-title">➕ Crear técnico</div>
+      <div class="card-title">➕ Crear supervisor</div>
       <div class="grid-3">
         <div class="field"><label>Nombre</label><input id="nu-name"></div>
         <div class="field"><label>Correo</label><input id="nu-email" placeholder="usuario@sopraval.cl"></div>
-        <div class="field"><label>Cargo</label><input id="nu-cargo" value="Técnico de Mantenimiento"></div>
+        <div class="field"><label>Cargo</label><input id="nu-cargo" value="Supervisor"></div>
       </div>
       <button class="btn-primary" id="btn-crear-user">Crear usuario (clave: Sopraval2026)</button>
     </div>

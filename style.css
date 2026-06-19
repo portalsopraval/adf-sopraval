@@ -154,6 +154,25 @@ table.data .row-click { cursor:pointer; }
 .b-planaccion { background:#DBEAFE; color:#1E40AF; }
 .b-seguimiento { background:#EDE9FE; color:#5B21B6; }
 .b-cerrado { background:var(--green-lt); color:var(--green); }
+.b-porverif { background:#FEF3C7; color:#92400E; }
+.b-enjefatura { background:#DBEAFE; color:#1D4ED8; }
+.b-observado { background:#FDECEC; color:#B91C1C; }
+.b-aprobado { background:#DCFCE7; color:#15803D; }
+.verif-wrap { display:flex; flex-direction:column; gap:12px; }
+.verif-step { border:1px solid var(--border); border-radius:10px; padding:12px 14px; background:var(--gray-lt); }
+.vs-head { font-weight:800; color:var(--blue); margin-bottom:6px; }
+.vs-done { font-size:.86rem; padding:6px 10px; border-radius:8px; }
+.vs-ok { background:#DCFCE7; color:#15803D; }
+.vs-obs { background:#FDECEC; color:#B91C1C; }
+.vs-pend { font-size:.86rem; color:var(--gray); }
+.vs-form { margin-top:10px; display:flex; flex-direction:column; gap:8px; }
+.vs-form textarea { width:100%; min-height:54px; padding:8px; border:1px solid var(--border); border-radius:8px; font-family:inherit; font-size:.85rem; }
+.vs-form select { padding:6px 8px; border:1px solid var(--border); border-radius:8px; }
+.vs-btns { display:flex; gap:8px; flex-wrap:wrap; }
+.verif-obs { font-size:.82rem; background:#fff; border:1px dashed var(--border); border-radius:8px; padding:8px 10px; }
+.ob-item { color:#444; padding:2px 0; }
+.avance-fill.sem-validar { background:#2563EB; }
+.plazo-tag.sem-validar { background:#DBEAFE; color:#1D4ED8; }
 .b-recurrente { background:var(--red-lt); color:var(--red); }
 .b-esporadico { background:var(--blue-lt); color:var(--blue); }
 .b-inmediata { background:var(--amber-lt); color:var(--amber); }

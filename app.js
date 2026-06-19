@@ -46,6 +46,10 @@ const esAdmin = () => CU && ADMINS.includes((CU.email||'').toLowerCase());
 // Usuarios con vista limitada SOLO a Planes PM e Indicadores
 const VISTA_PM_IND = ['fcarroza@sopraval.cl'];
 const esVistaPMInd = () => CU && VISTA_PM_IND.includes((CU.email||'').toLowerCase());
+// Jefaturas de mantenimiento: 2º nivel de verificación (validan planes + info técnica del ADF)
+const JEFATURAS = ['gzapata@sopraval.cl','cmadridp@sopraval.cl','ccrojas@sopraval.cl','cllopez@sopraval.cl'];
+const esJefatura = () => CU && JEFATURAS.includes((CU.email||'').toLowerCase());
+const JEFATURAS_NOMBRES = { 'gzapata@sopraval.cl':'Gonzalo Zapata','cmadridp@sopraval.cl':'Cristobal Madrid','ccrojas@sopraval.cl':'Cristian Rojas','cllopez@sopraval.cl':'Claudio Lopez' };
 
 function toast(msg, type='info'){
   const t=document.createElement('div'); t.className='toast '+type; t.textContent=msg;
@@ -56,11 +60,15 @@ const AREAS = ['Producción','Faena','Despresado','Cámaras / Frío','Calderas',
   'Servicios / Utilities','Rendering','Despacho','Mantenimiento','Otra'];
 
 const ESTADOS = {
-  Borrador:    { lbl:'Borrador',      cls:'b-borrador'   },
-  Analisis:    { lbl:'En Análisis',   cls:'b-analisis'   },
-  PlanAccion:  { lbl:'Plan de Acción',cls:'b-planaccion' },
-  Seguimiento: { lbl:'Seguimiento',   cls:'b-seguimiento'},
-  Cerrado:     { lbl:'Cerrado',       cls:'b-cerrado'    },
+  Borrador:    { lbl:'Borrador',          cls:'b-borrador'   },
+  Analisis:    { lbl:'En Análisis',       cls:'b-analisis'   },
+  PorVerificar:{ lbl:'Por verificar',     cls:'b-porverif'   },
+  EnJefatura:  { lbl:'En jefatura',       cls:'b-enjefatura' },
+  Observado:   { lbl:'Observado',         cls:'b-observado'  },
+  Aprobado:    { lbl:'Aprobado',          cls:'b-aprobado'   },
+  PlanAccion:  { lbl:'Plan de Acción',    cls:'b-planaccion' },
+  Seguimiento: { lbl:'Seguimiento',       cls:'b-seguimiento'},
+  Cerrado:     { lbl:'Cerrado',           cls:'b-cerrado'    },
 };
 const badge = est => { const e=ESTADOS[est]||ESTADOS.Borrador; return `<span class="badge ${e.cls}">${e.lbl}</span>`; };
 
@@ -826,12 +834,18 @@ function arrancarApp(){
   renderTabs();
   escucharADFs();
   if(esLider() || esVistaPMInd()) escucharPlanesMP();
-  irTab(esVistaPMInd() ? 'mantenimiento' : 'inicio');
+  irTab(esVistaPMInd() ? 'mantenimiento' : (esJefatura() ? 'listado' : 'inicio'));
 }
 
 function renderTabs(){
   if(esVistaPMInd()){
     const tabs = [['mantenimiento','🔧 Planes PM'],['confiabilidad','📊 Indicadores']];
+    $('tabs-nav').innerHTML = tabs.map(([k,l])=>`<button class="tab-btn" data-tab="${k}">${l}</button>`).join('');
+    $('tabs-nav').querySelectorAll('.tab-btn').forEach(b=> b.addEventListener('click', ()=>irTab(b.dataset.tab)));
+    return;
+  }
+  if(esJefatura()){
+    const tabs = [['inicio','🏠 Inicio'],['listado','📋 ADF a validar'],['tiempos','⏱ Control de Tiempos'],['confiabilidad','📊 Indicadores']];
     $('tabs-nav').innerHTML = tabs.map(([k,l])=>`<button class="tab-btn" data-tab="${k}">${l}</button>`).join('');
     $('tabs-nav').querySelectorAll('.tab-btn').forEach(b=> b.addEventListener('click', ()=>irTab(b.dataset.tab)));
     return;
@@ -849,8 +863,9 @@ function renderTabs(){
 }
 
 function irTab(tab){
-  if(tab==='confiabilidad' && !esAdmin() && !esVistaPMInd()) tab=esVistaPMInd()?'mantenimiento':'inicio';
+  if(tab==='confiabilidad' && !esAdmin() && !esVistaPMInd() && !esJefatura()) tab='inicio';
   if(esVistaPMInd() && tab!=='confiabilidad' && tab!=='mantenimiento') tab='mantenimiento';
+  if(esJefatura() && !['inicio','listado','tiempos','confiabilidad'].includes(tab)) tab='listado';
   _activeTab=tab;
   $('tabs-nav').querySelectorAll('.tab-btn').forEach(b=>
     b.classList.toggle('active', b.dataset.tab===tab));
@@ -877,7 +892,7 @@ function escucharADFs(){
 }
 
 function misADFs(){
-  return (esLider() || esVistaPMInd()) ? _cache.adfs : _cache.adfs.filter(a=> a.creadorId===CU.id || a.creadorEmail===CU.email);
+  return (esLider() || esVistaPMInd() || esJefatura()) ? _cache.adfs : _cache.adfs.filter(a=> a.creadorId===CU.id || a.creadorEmail===CU.email);
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -1506,12 +1521,13 @@ async function guardarADF(){
   const id=uid();
   const adf={
     id, ...w, folio,
-    estado:'PlanAccion',
+    estado:'PorVerificar',
     creadorId:CU.id, creadorEmail:CU.email, creadorNombre:CU.name,
     createdAt:new Date().toISOString(), updatedAt:new Date().toISOString(),
     seguimiento: w.analisis.planes.map(p=>({ actividad:p.actividad, fechaSolucion:'', realizado:'', hecho:false, imagen:'', comentario:'' })),
+    verifMetodologia:null, jefaturaAsignada:null, verifJefatura:null, observaciones:[],
     evidencias:'', cerradoPor:'', cerradoAt:'',
-    historial:[{ accion:'Creado', usuario:CU.name, fecha:new Date().toISOString() }],
+    historial:[{ accion:'Creado · enviado a verificación metodológica', usuario:CU.name, fecha:new Date().toISOString() }],
   };
   adf.area = normArea(adf.area);
   try{
@@ -1566,7 +1582,7 @@ function renderSeguimiento(){
    ═══════════════════════════════════════════════════════════ */
 function renderTiempos(){
   const today = new Date(); today.setHours(0,0,0,0);
-  const activos = _cache.adfs.filter(a=>['PlanAccion','Seguimiento'].includes(a.estado));
+  const activos = _cache.adfs.filter(a=>['Aprobado','Seguimiento','PlanAccion'].includes(a.estado));
 
   const rows = [];
   for(const a of activos){
@@ -1582,67 +1598,72 @@ function renderTiempos(){
       const diasRest = Math.round((fechaComp-today)/86400000); // >0 faltan · 0 vence hoy · <0 vencido
       let pct = Math.round(transcurrido/totalDias*100);
       if(pct<0) pct=0;
-      let semaforo, semCls, estadoTiempo;
-      if(s.hecho){ semaforo='✅'; semCls='sem-done'; estadoTiempo='Concluido'; }
-      else if(diasRest<0){ semaforo='🔴'; semCls='sem-over'; estadoTiempo=`Vencido (${Math.abs(diasRest)} día(s))`; pct=100; }
-      else if(diasRest===0){ semaforo='🟠'; semCls='sem-limit'; estadoTiempo='Vence hoy'; pct=Math.max(pct,100); }
-      else if(pct>=90){ semaforo='🟠'; semCls='sem-limit'; estadoTiempo=`Límite (faltan ${diasRest} día(s))`; }
-      else if(pct>=50){ semaforo='🟡'; semCls='sem-warn'; estadoTiempo=`En riesgo (faltan ${diasRest} día(s))`; }
-      else { semaforo='🟢'; semCls='sem-ok'; estadoTiempo=`A tiempo (faltan ${diasRest} día(s))`; }
-      rows.push({ a, i, pl, s, pct, transcurrido, diasRest, totalDias, semaforo, semCls, estadoTiempo });
+      let semaforo, semCls, estadoTiempo, statusPlan;
+      if(s.planAprobado){ statusPlan='Aprobado'; semaforo='🟢'; semCls='sem-done'; estadoTiempo='Aprobado'; pct=100; }
+      else if(s.porValidar){ statusPlan='PorValidar'; semaforo='🔵'; semCls='sem-validar'; estadoTiempo='Por validar'; pct=Math.max(pct,100); }
+      else if(diasRest<0){ statusPlan='Atrasado'; semaforo='🔴'; semCls='sem-over'; estadoTiempo=`Atrasado (${Math.abs(diasRest)} día(s))`; pct=100; }
+      else { statusPlan='EnProceso'; semaforo='🟡'; semCls='sem-warn'; estadoTiempo=`En proceso (faltan ${diasRest} día(s))`; }
+      rows.push({ a, i, pl, s, pct, transcurrido, diasRest, totalDias, semaforo, semCls, estadoTiempo, statusPlan });
     });
   }
-  // Más urgentes primero (vencidos arriba); concluidos al final
-  rows.sort((a,b)=> (a.s.hecho?1:0)-(b.s.hecho?1:0) || a.diasRest-b.diasRest);
-  const nVencidos = rows.filter(r=>!r.s.hecho && r.diasRest<0).length;
+  // Orden: atrasados arriba; aprobados al final
+  rows.sort((a,b)=> (a.s.planAprobado?1:0)-(b.s.planAprobado?1:0) || a.diasRest-b.diasRest);
+  const nVencidos = rows.filter(r=>r.statusPlan==='Atrasado').length;
 
   $('pane-tiempos').innerHTML = `
     <div class="page-title">⏱ Control de Tiempos</div>
     <div class="page-sub">Planes de acción con fecha compromiso — ${rows.length} item(s) activo(s)</div>
-    ${nVencidos ? `<div class="alerta-vencidos">🔴 <b>${nVencidos}</b> plan(es) de acción <b>vencido(s)</b> sin concluir. Requieren atención inmediata.</div>` : ''}
+    ${nVencidos ? `<div class="alerta-vencidos">🔴 <b>${nVencidos}</b> plan(es) de acción <b>atrasado(s)</b>. Requieren atención inmediata.</div>` : ''}
     <div class="tiempos-leyenda">
-      <span>🟢 A tiempo (&lt;50%)</span>
-      <span>🟡 En riesgo (50–90%)</span>
-      <span>🟠 Límite (90–100%)</span>
-      <span>🔴 Vencido (&gt;100%)</span>
-      <span>✅ Concluido</span>
+      <span>🟡 En proceso</span>
+      <span>🔴 Atrasado (vencido)</span>
+      <span>🔵 Por validar (evidencia enviada)</span>
+      <span>🟢 Aprobado</span>
     </div>
-    ${rows.length ? tiemposTabla(rows) : `<div class="empty"><div class="e-icon">⏱</div>No hay planes con fecha compromiso activos.</div>`}
+    ${rows.length ? tiemposTabla(rows) : `<div class="empty"><div class="e-icon">⏱</div>No hay planes de acción en seguimiento (el ADF debe estar aprobado por jefatura).</div>`}
   `;
 }
 
 function tiemposTabla(rows){
   return `<div class="tbl-wrap"><table class="data">
     <thead><tr>
-      <th>Estado</th><th>Folio</th><th>Equipo</th><th>Actividad (plan)</th>
-      <th>Responsable</th><th>F. Compromiso</th><th>Plazo</th>
-      <th>Semáforo</th><th>Avance</th><th>Respaldo</th><th>Concluido</th>
+      <th>Folio</th><th>Equipo</th><th>Actividad (plan)</th>
+      <th>Responsable</th><th>F. Compromiso</th><th>Status</th>
+      <th>Avance</th><th>Evidencia</th><th>Acción</th>
     </tr></thead>
     <tbody>
-      ${rows.map(r=>`<tr class="${r.s.hecho?'row-done':''}">
-        <td>${badge(r.a.estado)}</td>
+      ${rows.map(r=>{
+        const owner = r.a.creadorId===CU.id || r.a.creadorEmail===CU.email;
+        const validador = esAdmin() || esLider() || (esJefatura() && r.a.jefaturaAsignada && r.a.jefaturaAsignada.email===CU.email);
+        let accion='';
+        if(r.s.planAprobado){ accion='<span class="sem-done" style="font-weight:700">✅ Aprobado</span>'; }
+        else if(r.s.porValidar){
+          accion = validador
+            ? `<button class="btn-green btn-sm" onclick="aprobarPlan('${r.a.id}',${r.i})">✓ Aprobar</button> <button class="btn-danger btn-sm" onclick="rechazarPlan('${r.a.id}',${r.i})">↩ Rechazar</button>`
+            : '<span class="muted">⏳ En validación</span>';
+        } else {
+          accion = (owner||validador)
+            ? `<button class="btn-primary btn-sm" onclick="enviarAValidar('${r.a.id}',${r.i})">📨 Enviar a validar</button>${r.s.respaldo?'':'<div class="muted" style="font-size:.72rem">requiere evidencia</div>'}`
+            : '<span class="muted">—</span>';
+        }
+        return `<tr class="${r.s.planAprobado?'row-done':''}">
         <td class="nowrap"><b>${esc(r.a.folio||'—')}</b></td>
         <td>${esc(r.a.equipo||'—')}</td>
         <td style="max-width:220px">${esc(r.pl.actividad)}</td>
         <td>${esc(r.pl.responsable||'—')}</td>
         <td class="nowrap">${fmtD(r.pl.fecha)}</td>
-        <td class="nowrap"><span class="plazo-tag ${r.semCls}">${esc(r.estadoTiempo)}</span></td>
-        <td style="text-align:center;font-size:1.3rem">${r.semaforo}</td>
+        <td class="nowrap"><span class="plazo-tag ${r.semCls}">${r.semaforo} ${esc(r.estadoTiempo)}</span></td>
         <td class="avance-cell">
           <div class="avance-bar"><div class="avance-fill ${r.semCls}" style="width:${Math.min(100,r.pct)}%"></div></div>
           <span class="avance-pct">${r.pct}%</span>
         </td>
         <td style="text-align:center" class="nowrap">
           ${r.s.respaldo?`<a class="resp-link" onclick="verRespaldo('${r.a.id}',${r.i})" title="${esc(r.s.respaldo.name||'respaldo')}">📎 Ver</a><br>`:''}
-          <button class="btn-ghost btn-sm" onclick="document.getElementById('resp-${r.a.id}-${r.i}').click()">${r.s.respaldo?'Cambiar':'➕ Adjuntar'}</button>
-          <input type="file" id="resp-${r.a.id}-${r.i}" class="hidden" accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.txt"
-            onchange="subirRespaldo('${r.a.id}',${r.i},this)">
+          ${r.s.planAprobado?'':`<button class="btn-ghost btn-sm" onclick="document.getElementById('resp-${r.a.id}-${r.i}').click()">${r.s.respaldo?'Cambiar':'➕ Adjuntar'}</button>
+          <input type="file" id="resp-${r.a.id}-${r.i}" class="hidden" accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.txt" onchange="subirRespaldo('${r.a.id}',${r.i},this)">`}
         </td>
-        <td style="text-align:center">
-          <input type="checkbox" class="chk-concluido" ${r.s.hecho?'checked':''}
-            onchange="concluirPlan('${r.a.id}',${r.i},this.checked)">
-        </td>
-      </tr>`).join('')}
+        <td style="text-align:center" class="nowrap">${accion}</td>
+      </tr>`;}).join('')}
     </tbody>
   </table></div>`;
 }
@@ -1657,6 +1678,46 @@ async function concluirPlan(adfId, planIdx, checked){
     updatedAt:new Date().toISOString(),
   });
   toast(checked?'Plan marcado como concluido.':'Plan desmarcado.','ok');
+}
+
+function esValidadorPlan(a){ return esAdmin() || esLider() || (esJefatura() && a.jefaturaAsignada && a.jefaturaAsignada.email===CU.email); }
+
+// El técnico envía el plan a validar — OBLIGATORIO adjuntar evidencia antes
+async function enviarAValidar(adfId, idx){
+  const a=_cache.adfs.find(x=>x.id===adfId); if(!a) return;
+  const seg=a.seguimiento||[];
+  if(!seg[idx] || !seg[idx].respaldo || !seg[idx].respaldo.data){
+    toast('Debes adjuntar evidencia (foto o archivo) antes de enviar a validar.','err'); return;
+  }
+  const now=new Date().toISOString();
+  const nuevo=seg.map((s,i)=> i===idx ? {...s, porValidar:true, planAprobado:false, enviadoPor:CU.name, enviadoFecha:now} : {...s});
+  await fdb.collection(COL_ADF).doc(adfId).update({ seguimiento:nuevo, updatedAt:now,
+    historial:firebase.firestore.FieldValue.arrayUnion({ accion:'Plan enviado a validar: '+(seg[idx].actividad||('#'+(idx+1))), usuario:CU.name, fecha:now }) });
+  a.seguimiento=nuevo; toast('Plan enviado a validar.','ok'); renderTiempos();
+}
+
+// Jefatura/admin aprueba la evidencia del plan
+async function aprobarPlan(adfId, idx){
+  const a=_cache.adfs.find(x=>x.id===adfId); if(!a) return;
+  if(!esValidadorPlan(a)){ toast('No autorizado.','err'); return; }
+  const now=new Date().toISOString();
+  const seg=(a.seguimiento||[]).map((s,i)=> i===idx ? {...s, planAprobado:true, porValidar:false, hecho:true, aprobadoPor:CU.name, aprobadoFecha:now} : {...s});
+  const upd={ seguimiento:seg, updatedAt:now,
+    historial:firebase.firestore.FieldValue.arrayUnion({ accion:'Plan aprobado: '+((a.seguimiento[idx]||{}).actividad||('#'+(idx+1))), usuario:CU.name, fecha:now }) };
+  if(a.estado==='Aprobado') upd.estado='Seguimiento';
+  await fdb.collection(COL_ADF).doc(adfId).update(upd);
+  a.seguimiento=seg; if(upd.estado) a.estado=upd.estado; toast('Plan aprobado.','ok'); renderTiempos();
+}
+
+// Jefatura/admin rechaza — vuelve a "En proceso" para corregir
+async function rechazarPlan(adfId, idx){
+  const a=_cache.adfs.find(x=>x.id===adfId); if(!a) return;
+  if(!esValidadorPlan(a)){ toast('No autorizado.','err'); return; }
+  const now=new Date().toISOString();
+  const seg=(a.seguimiento||[]).map((s,i)=> i===idx ? {...s, porValidar:false, planAprobado:false, hecho:false} : {...s});
+  await fdb.collection(COL_ADF).doc(adfId).update({ seguimiento:seg, updatedAt:now,
+    historial:firebase.firestore.FieldValue.arrayUnion({ accion:'Plan rechazado (vuelve a En proceso)', usuario:CU.name, fecha:now }) });
+  a.seguimiento=seg; toast('Plan rechazado: vuelve a En proceso.','ok'); renderTiempos();
 }
 
 // Adjunta un respaldo (foto o archivo) al plan de acción, desde Control de Tiempos
@@ -1682,7 +1743,9 @@ async function subirRespaldo(adfId, idx, input){
   }
   seg[idx]={ ...seg[idx], respaldo:{ data, name, type, subidoPor:CU.name, fecha:new Date().toISOString() } };
   await fdb.collection(COL_ADF).doc(adfId).update({ seguimiento:seg, updatedAt:new Date().toISOString() });
-  toast('Respaldo adjuntado.','ok');
+  a.seguimiento=seg;
+  toast('Evidencia adjuntada.','ok');
+  if(_activeTab==='tiempos') renderTiempos();
 }
 
 // Abre/descarga el respaldo del plan
@@ -2396,12 +2459,15 @@ function abrirADF(id){
       <tbody>${(a.analisis?.planes||[]).map(p=>`<tr><td>${esc(p.actividad)}</td><td>${esc(p.responsable||'—')}</td><td>${fmtD(p.fecha)}</td>
       <td>${p.tipo==='INMEDIATA'?'<span class="badge b-inmediata">Inmediata</span>':'<span class="badge b-permanente">Permanente</span>'}</td></tr>`).join('')}</tbody></table></div>
 
-    <div class="section-head"><h3>7 · Seguimiento de soluciones</h3></div>
+    <div class="section-head"><h3>7 · Verificación y validación</h3></div>
+    ${verifZoneHTML(a)}
+
+    <div class="section-head"><h3>8 · Seguimiento de soluciones</h3></div>
     <div id="seg-zone">${segHTML(a)}</div>
 
     <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:20px;border-top:1px solid var(--border);padding-top:16px">
       ${a.estado!=='Cerrado'?`<button class="btn-green" onclick="guardarSeguimiento('${a.id}')">💾 Guardar seguimiento</button>`:''}
-      ${(esLider() && a.estado!=='Cerrado')?`<button class="btn-primary" onclick="cerrarADF('${a.id}')">🔒 Validar y cerrar ADF</button>`:''}
+      ${(esLider() && ['Aprobado','Seguimiento','PlanAccion'].includes(a.estado))?`<button class="btn-primary" onclick="cerrarADF('${a.id}')">🔒 Cerrar ADF</button>`:''}
       ${(esLider() || a.creadorId===CU.id)?`<button class="btn-danger" onclick="eliminarADF('${a.id}')">🗑 Eliminar</button>`:''}
       <button class="btn-primary" onclick="exportarA3('${a.id}')">📄 Informe A3 / PDF</button>
       <button class="btn-ghost" onclick="window.print()">🖨 Imprimir</button>
@@ -2409,6 +2475,112 @@ function abrirADF(id){
     ${a.estado==='Cerrado'?`<p class="muted" style="margin-top:12px">🔒 Cerrado por ${esc(a.cerradoPor)} · ${fmtDT(a.cerradoAt)}</p>`:''}
   `;
   $('modal-detalle').classList.add('open');
+}
+
+/* ── Verificación / validación del ADF (2 niveles) ── */
+function necesitaVerifMet(a){ return ['PorVerificar','PlanAccion'].includes(a.estado); }
+
+function verifZoneHTML(a){
+  const vm=a.verifMetodologia, vj=a.verifJefatura, ja=a.jefaturaAsignada;
+  const obs=(a.observaciones||[]);
+  const puedeMet = esAdmin() && necesitaVerifMet(a);
+  const puedeJef = (esAdmin() || (esJefatura() && ja && ja.email===CU.email)) && a.estado==='EnJefatura';
+  const puedeReenviar = a.estado==='Observado' && (esAdmin() || esLider() || a.creadorId===CU.id || a.creadorEmail===CU.email);
+  let h = `<div class="verif-wrap">`;
+
+  h += `<div class="verif-step"><div class="vs-head">1) Verificación metodológica <span class="muted">(Gino / Jonathan)</span></div>`;
+  if(vm) h += `<div class="vs-done ${vm.resultado==='Observado'?'vs-obs':'vs-ok'}">${vm.resultado==='Observado'?'↩ Observado':'✓ Verificada'} por ${esc(vm.por)} · ${fmtDT(vm.fecha)}${vm.comentario?` — <i>${esc(vm.comentario)}</i>`:''}</div>`;
+  else h += `<div class="vs-pend">⏳ Pendiente</div>`;
+  if(puedeMet){
+    const opts = Object.entries(JEFATURAS_NOMBRES).map(([em,nm])=>`<option value="${em}">${esc(nm)}</option>`).join('');
+    h += `<div class="vs-form">
+      <textarea id="vm-coment" placeholder="Comentario (obligatorio si observas)"></textarea>
+      <label>Derivar a jefatura: <select id="vm-jefatura">${opts}</select></label>
+      <div class="vs-btns">
+        <button class="btn-green btn-sm" onclick="derivarJefatura('${a.id}')">✓ Verificar y derivar a jefatura</button>
+        <button class="btn-danger btn-sm" onclick="observarADF('${a.id}','metodologia')">↩ Observar</button>
+      </div></div>`;
+  }
+  h += `</div>`;
+
+  h += `<div class="verif-step"><div class="vs-head">2) Validación de jefatura ${ja?`<span class="muted">(${esc(ja.name)})</span>`:''}</div>`;
+  if(!vm) h += `<div class="vs-pend">— (requiere verificación metodológica primero)</div>`;
+  else if(vj) h += `<div class="vs-done ${vj.resultado==='Observado'?'vs-obs':'vs-ok'}">${vj.resultado==='Observado'?'↩ Observado':'✓ Aprobada'} por ${esc(vj.por)} · ${fmtDT(vj.fecha)}${vj.comentario?` — <i>${esc(vj.comentario)}</i>`:''}</div>`;
+  else if(a.estado==='EnJefatura') h += `<div class="vs-pend">⏳ En espera de ${ja?esc(ja.name):'jefatura'}</div>`;
+  else h += `<div class="vs-pend">—</div>`;
+  if(puedeJef){
+    h += `<div class="vs-form">
+      <textarea id="vj-coment" placeholder="Comentario de validación (obligatorio si observas)"></textarea>
+      <div class="vs-btns">
+        <button class="btn-green btn-sm" onclick="aprobarJefatura('${a.id}')">✓ Aprobar (validar planes e info técnica)</button>
+        <button class="btn-danger btn-sm" onclick="observarADF('${a.id}','jefatura')">↩ Observar</button>
+      </div></div>`;
+  }
+  h += `</div>`;
+
+  if(puedeReenviar) h += `<div class="vs-form"><button class="btn-primary btn-sm" onclick="reenviarVerificacion('${a.id}')">↪ Corregido — reenviar a verificación</button></div>`;
+  if(obs.length) h += `<div class="verif-obs"><b>Observaciones:</b>${obs.map(o=>`<div class="ob-item">[${o.etapa==='jefatura'?'Jefatura':'Metodología'}] ${esc(o.por)} · ${fmtDT(o.fecha)}: ${esc(o.texto)}</div>`).join('')}</div>`;
+  h += `</div>`;
+  return h;
+}
+
+async function derivarJefatura(id){
+  const a=_cache.adfs.find(x=>x.id===id); if(!a||!esAdmin()) return;
+  const email=$('vm-jefatura')?.value; if(!email){ toast('Selecciona una jefatura.','err'); return; }
+  const name=JEFATURAS_NOMBRES[email]||email;
+  const coment=($('vm-coment')?.value||'').trim();
+  const now=new Date().toISOString();
+  const vm={ por:CU.name, fecha:now, resultado:'Verificada', comentario:coment };
+  try{
+    await fdb.collection(COL_ADF).doc(id).update({ estado:'EnJefatura', verifMetodologia:vm, jefaturaAsignada:{email,name}, updatedAt:now,
+      historial:firebase.firestore.FieldValue.arrayUnion({ accion:'Metodología verificada · derivado a '+name, usuario:CU.name, fecha:now }) });
+    Object.assign(a,{ estado:'EnJefatura', verifMetodologia:vm, jefaturaAsignada:{email,name} });
+    toast('Verificado y derivado a '+name+'.','ok'); abrirADF(id);
+  }catch(e){ toast('Error: '+e.message,'err'); }
+}
+
+async function aprobarJefatura(id){
+  const a=_cache.adfs.find(x=>x.id===id); if(!a) return;
+  if(!(esAdmin() || (esJefatura() && a.jefaturaAsignada && a.jefaturaAsignada.email===CU.email))){ toast('No autorizado.','err'); return; }
+  const coment=($('vj-coment')?.value||'').trim();
+  const now=new Date().toISOString();
+  const vj={ por:CU.name, fecha:now, resultado:'Aprobada', comentario:coment };
+  try{
+    await fdb.collection(COL_ADF).doc(id).update({ estado:'Aprobado', verifJefatura:vj, updatedAt:now,
+      historial:firebase.firestore.FieldValue.arrayUnion({ accion:'Aprobado por jefatura · planes en seguimiento', usuario:CU.name, fecha:now }) });
+    Object.assign(a,{ estado:'Aprobado', verifJefatura:vj });
+    toast('ADF aprobado. Planes activos para seguimiento.','ok'); abrirADF(id);
+  }catch(e){ toast('Error: '+e.message,'err'); }
+}
+
+async function observarADF(id, etapa){
+  const a=_cache.adfs.find(x=>x.id===id); if(!a) return;
+  const texto=($((etapa==='jefatura'?'vj-coment':'vm-coment'))?.value||'').trim();
+  if(!texto){ toast('Escribe la observación antes de devolver.','err'); return; }
+  const now=new Date().toISOString();
+  const ob={ etapa, por:CU.name, fecha:now, texto };
+  const upd={ estado:'Observado', updatedAt:now,
+    observaciones:firebase.firestore.FieldValue.arrayUnion(ob),
+    historial:firebase.firestore.FieldValue.arrayUnion({ accion:'Observado ('+(etapa==='jefatura'?'jefatura':'metodología')+')', usuario:CU.name, fecha:now }) };
+  if(etapa==='metodologia') upd.verifMetodologia={ por:CU.name, fecha:now, resultado:'Observado', comentario:texto };
+  else upd.verifJefatura={ por:CU.name, fecha:now, resultado:'Observado', comentario:texto };
+  try{
+    await fdb.collection(COL_ADF).doc(id).update(upd);
+    a.estado='Observado'; a.observaciones=[...(a.observaciones||[]),ob];
+    if(etapa==='metodologia') a.verifMetodologia=upd.verifMetodologia; else a.verifJefatura=upd.verifJefatura;
+    toast('ADF observado y devuelto.','ok'); abrirADF(id);
+  }catch(e){ toast('Error: '+e.message,'err'); }
+}
+
+async function reenviarVerificacion(id){
+  const a=_cache.adfs.find(x=>x.id===id); if(!a) return;
+  const now=new Date().toISOString();
+  try{
+    await fdb.collection(COL_ADF).doc(id).update({ estado:'PorVerificar', verifMetodologia:null, verifJefatura:null, updatedAt:now,
+      historial:firebase.firestore.FieldValue.arrayUnion({ accion:'Corregido · reenviado a verificación', usuario:CU.name, fecha:now }) });
+    Object.assign(a,{ estado:'PorVerificar', verifMetodologia:null, verifJefatura:null });
+    toast('Reenviado a verificación metodológica.','ok'); abrirADF(id);
+  }catch(e){ toast('Error: '+e.message,'err'); }
 }
 
 // Edición rápida de cabecera (Folio, Área, Línea, Equipo, SAP, Síntoma, Modo de falla)
@@ -2593,6 +2765,12 @@ function exportarA3(id){
       <table><thead><tr><th style="width:50%">Actividad</th><th>Responsable</th><th>Fecha compromiso</th><th>Tipo</th></tr></thead><tbody>
       ${(an.planes||[]).map(p=>`<tr><td>${e(p.actividad)}</td><td>${e(p.responsable||'—')}</td><td>${fmtD(p.fecha)}</td><td>${e(p.tipo||'')}</td></tr>`).join('')||'<tr><td colspan="4">—</td></tr>'}
       </tbody></table>
+    </div>
+
+    <div class="box">
+      <h2>7 · Verificación y validación</h2>
+      <div class="kv"><span class="k">Verificación metodológica</span><span class="v">${a.verifMetodologia?e((a.verifMetodologia.resultado||'')+' · '+a.verifMetodologia.por+' · '+fmtDT(a.verifMetodologia.fecha))+(a.verifMetodologia.comentario?' — '+e(a.verifMetodologia.comentario):''):'Pendiente'}</span></div>
+      <div class="kv"><span class="k">Validación jefatura</span><span class="v">${a.verifJefatura?e((a.verifJefatura.resultado||'')+' · '+a.verifJefatura.por+' · '+fmtDT(a.verifJefatura.fecha))+(a.verifJefatura.comentario?' — '+e(a.verifJefatura.comentario):''):(a.jefaturaAsignada?('Pendiente · '+e(a.jefaturaAsignada.name)):'Pendiente')}</span></div>
     </div>
 
     <div class="foot">
@@ -3049,5 +3227,7 @@ Object.assign(window,{ irTab, abrirADF, marcarProbable, editCausa, editPorque, e
   agregarPlan, editSeg, guardarSeguimiento, cerrarADF, eliminarADF,
   concluirPlan, subirImgSeg, verImagenSeg, subirRespaldo, verRespaldo, exportarA3,
   descargarPlantillaADF, importarADFExcel, editarCabecera, autoCabecera, guardarCabecera, normalizarAreasGuardadas,
+  derivarJefatura, aprobarJefatura, observarADF, reenviarVerificacion,
+  enviarAValidar, aprobarPlan, rechazarPlan,
   abrirNuevoPlan, abrirPlanMP, guardarPlanMP, eliminarPlanMP,
   agregarActMP, calcProximaAuto, autoFillPlan });

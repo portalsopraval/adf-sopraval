@@ -760,7 +760,7 @@ const SEED_USERS = [
   { email:'mahumadav@sopraval.cl',   name:'Maximiliano Ahumada',  role:'tecnico', cargo:'Supervisor Procesos',                 area:'PROCESOS' },
   { email:'jvaldenegro@sopraval.cl', name:'Juan Valdenegro',      role:'tecnico', cargo:'Supervisor Suministros',              area:'SUMINISTROS' },
   { email:'lgodoyt@sopraval.cl',     name:'Leonardo Godoy',       role:'tecnico', cargo:'Supervisor Refrigeración',            area:'REFRIGERACION' },
-  { email:'ppalmah@agosuper.com',    name:'Patricio Palma',       role:'tecnico', cargo:'Supervisor Riles / Subproductos',     area:'SUBPRODUCTOS' },
+  { email:'ppalmah@agrosuper.com',   name:'Patricio Palma',       role:'tecnico', cargo:'Supervisor Riles / Subproductos',     area:'SUBPRODUCTOS' },
   { email:'ddhernandez@sopraval.cl', name:'Diego Hernández',      role:'tecnico', cargo:'Supervisor Eléctrico / Generación',   area:'GENERACION' },
 ];
 const PASS_BASE = 'Sopraval2026';

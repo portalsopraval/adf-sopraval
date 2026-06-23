@@ -596,6 +596,41 @@ function categoria6M(txt){
   return 'Máquina';
 }
 
+// ── Tipología de falla: taxonomía estándar para que el Pareto AGRUPE BIEN ──
+// El Pareto por texto libre se fragmenta (cada causa redactada distinto cuenta aparte).
+// Esta tipología mapea la causa a una de ~16 categorías técnicas estándar, derivada
+// del texto (y opcionalmente almacenada en c.tipologia si el usuario la fija a mano).
+const TIPOLOGIAS_FALLA = [
+  'Desgaste / fatiga','Lubricación deficiente','Falla eléctrica / control',
+  'Obstrucción / atascamiento','Corrosión / oxidación','Soltura / desajuste mecánico',
+  'Rotura / fractura','Sobrecarga / sobreesfuerzo','Sensor / instrumentación',
+  'Contaminación / suciedad','Fuga / pérdida de hermeticidad','Sobrecalentamiento',
+  'Vibración / desalineación','Error operacional','Falta de mantenimiento',
+  'Material / repuesto inadecuado','Otra / sin clasificar'
+];
+function tipologiaDeCausa(c){
+  if(c && c.tipologia && TIPOLOGIAS_FALLA.includes(c.tipologia)) return c.tipologia; // fijada a mano
+  const t = norm(typeof c==='string'?c:(c&&c.txt));
+  const has = (...ks)=> ks.some(k=>t.includes(norm(k)));
+  if(has('lubric','engrase','grasa','sin aceite','falta de aceite','reengrase')) return 'Lubricación deficiente';
+  if(has('corros','oxid','herrumbre','sarro','picadura')) return 'Corrosión / oxidación';
+  if(has('fuga','goteo','filtraci','hermetic','sello','reten','retén','empaquet','junta','o-ring','oring')) return 'Fuga / pérdida de hermeticidad';
+  if(has('obstru','atasc','tapon','atoll','incrusta','cuerpo extra','bloque','tranc')) return 'Obstrucción / atascamiento';
+  if(has('sensor','calibr','medici','transmisor','lectura','instrument','encoder')) return 'Sensor / instrumentación';
+  if(has('electric','eléctric','corto','fusible','contactor','variador','tablero','cableado','señal','control','plc','automat','breaker','rele','relé')) return 'Falla eléctrica / control';
+  if(has('vibrac','desalin','balanceo','desbalance')) return 'Vibración / desalineación';
+  if(has('sobrecalent','recalent','calentamiento','temperatura alta','exceso de temper')) return 'Sobrecalentamiento';
+  if(has('rotura','rompi','fractur','quebr','trizad','fisura','grieta','partido','cortado')) return 'Rotura / fractura';
+  if(has('suelto','soltura','floj','desajust','aflojam','desapriet','desacopl','perno','tornillo suelto')) return 'Soltura / desajuste mecánico';
+  if(has('sobrecarga','sobreesfuerzo','exceso de carga','sobreexig')) return 'Sobrecarga / sobreesfuerzo';
+  if(has('contamina','suciedad','polvo','mugre','residuo','grasa excesiva')) return 'Contaminación / suciedad';
+  if(has('operacional','operador','mala operac','error humano','manipula','maniobra','capacit')) return 'Error operacional';
+  if(has('preventiv','sin manteni','falta de manteni','vida util','antigüedad','antiguedad','vencid','obsolet','falta inspecc')) return 'Falta de mantenimiento';
+  if(has('repuesto','recubrim','inadecuado','diseño','diseno','mala calidad','material','baja calidad')) return 'Material / repuesto inadecuado';
+  if(has('desgast','fatiga','rodamiento','rodillo','rozamiento','friccion','fricción','deterioro','gastad')) return 'Desgaste / fatiga';
+  return 'Otra / sin clasificar';
+}
+
 // Grupos de modos que comparten un mismo ORIGEN físico de falla.
 // Permiten asociar "causas mixtas": cuando una falla (ej. obstrucción) puede
 // originarse en varios mecanismos, se incluyen causas de todos los modos del grupo.
@@ -1968,7 +2003,7 @@ function renderConfiabilidad(){
         <div class="chart-card"><div class="chart-title">Tipo de problema</div><div class="chart-box"><canvas id="ch-tipo"></canvas></div></div>
         <div class="chart-card"><div class="chart-title">Estado de los ADF</div><div class="chart-box"><canvas id="ch-estado"></canvas></div></div>
         <div class="chart-card"><div class="chart-title">Causas por categoría 6M (Ishikawa)</div><div class="chart-box"><canvas id="ch-6m"></canvas></div></div>
-        <div class="chart-card chart-wide"><div class="chart-title">Pareto de causas raíz — prioriza qué corregir primero</div><div class="chart-box"><canvas id="ch-pareto"></canvas></div></div>
+        <div class="chart-card chart-wide"><div class="chart-title">Pareto de causas raíz por tipología — prioriza qué corregir primero</div><div class="chart-box"><canvas id="ch-pareto"></canvas></div></div>
       </div>
 
       <div class="conf-nota">
@@ -1995,11 +2030,13 @@ function renderConfiabilidad(){
 
 // Causa raíz = TODAS las causas marcadas como probables en cada ADF
 function paretoCausas(data){
+  // Agrupa por TIPOLOGÍA de falla (estándar) en vez de por texto libre,
+  // así causas redactadas distinto se suman y el Pareto prioriza de verdad.
   const map = {};
   data.forEach(a=>{
     (a.analisis?.causas || []).filter(c=>c.probable).forEach(c=>{
-      const txt = (c.txt || '').trim();
-      if(txt) map[txt] = (map[txt]||0)+1;
+      const k = tipologiaDeCausa(c);
+      if(k) map[k] = (map[k]||0)+1;
     });
   });
   const arr = Object.entries(map).map(([k,v])=>({k,v})).sort((a,b)=>b.v-a.v).slice(0,12);
@@ -2529,7 +2566,7 @@ function editarAnalisis(id){
   const an=a.analisis||{};
   _anEditId=id;
   _anEdit={
-    causas:(an.causas||[]).map(c=>({txt:c.txt||'',cat:c.cat||'Máquina',probable:!!c.probable,origen:c.origen||'Manual'})),
+    causas:(an.causas||[]).map(c=>({txt:c.txt||'',cat:c.cat||'Máquina',tipologia:c.tipologia||'',probable:!!c.probable,origen:c.origen||'Manual'})),
     porques:(an.porques||[]).slice(),
     planes:(an.planes||[]).map(p=>({actividad:p.actividad||'',responsable:p.responsable||'',fecha:p.fecha||'',tipo:p.tipo||'PERMANENTE'})),
   };
@@ -2538,11 +2575,13 @@ function editarAnalisis(id){
 function anEditRender(){
   const z=$('an-edit'); if(!z||!_anEdit) return;
   const cOpts=v=>CATS_6M.map(o=>`<option ${o===v?'selected':''}>${o}</option>`).join('');
+  const tOpts=v=>`<option value="">⟳ Auto-tipología</option>`+TIPOLOGIAS_FALLA.map(o=>`<option ${o===v?'selected':''}>${o}</option>`).join('');
   z.innerHTML=`<div class="an-edit-box">
-    <b>Causas</b>
+    <b>Causas</b> <small class="muted">(la tipología agrupa el Pareto; déjala en Auto para que el sistema la deduzca)</small>
     ${_anEdit.causas.map((c,i)=>`<div class="an-row">
       <input value="${esc(c.txt)}" placeholder="Causa" oninput="anSet('causas',${i},'txt',this.value)">
-      <select onchange="anSet('causas',${i},'cat',this.value)">${cOpts(c.cat)}</select>
+      <select onchange="anSet('causas',${i},'cat',this.value)" title="Categoría 6M (Ishikawa)">${cOpts(c.cat)}</select>
+      <select onchange="anSet('causas',${i},'tipologia',this.value)" title="Tipología de falla (Pareto)">${tOpts(c.tipologia)}</select>
       <label class="an-chk"><input type="checkbox" ${c.probable?'checked':''} onchange="anSet('causas',${i},'probable',this.checked)"> probable</label>
       <button class="an-del" onclick="anDel('causas',${i})">✕</button></div>`).join('')}
     <button class="btn-ghost btn-sm" onclick="anAdd('causas')">➕ Causa</button>
@@ -2574,7 +2613,7 @@ function anAdd(arr){ if(!_anEdit) return; if(arr==='causas')_anEdit.causas.push(
 function anDel(arr,i){ if(!_anEdit) return; _anEdit[arr].splice(i,1); anEditRender(); }
 async function guardarAnalisis(id){
   const a=_cache.adfs.find(x=>x.id===id); if(!a||!_anEdit) return;
-  const causas=_anEdit.causas.filter(c=>c.txt.trim()).map(c=>({txt:c.txt.trim(),cat:c.cat,probable:!!c.probable,origen:c.origen||'Manual'}));
+  const causas=_anEdit.causas.filter(c=>c.txt.trim()).map(c=>({txt:c.txt.trim(),cat:c.cat,probable:!!c.probable,origen:c.origen||'Manual',...(c.tipologia?{tipologia:c.tipologia}:{})}));
   const porques=_anEdit.porques.map(p=>String(p).trim()).filter(Boolean);
   const planes=_anEdit.planes.filter(p=>p.actividad.trim()).map(p=>({actividad:p.actividad.trim(),responsable:p.responsable.trim(),fecha:p.fecha||'',tipo:(p.tipo||'PERMANENTE').toUpperCase()}));
   const an=Object.assign({}, a.analisis||{}, {causas,porques,planes});

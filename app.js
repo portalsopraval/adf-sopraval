@@ -50,6 +50,16 @@ const esVistaPMInd = () => CU && VISTA_PM_IND.includes((CU.email||'').toLowerCas
 const JEFATURAS = ['gzapata@sopraval.cl','cmadridp@sopraval.cl','ccrojas@sopraval.cl','cllopez@sopraval.cl'];
 const esJefatura = () => CU && JEFATURAS.includes((CU.email||'').toLowerCase());
 const JEFATURAS_NOMBRES = { 'gzapata@sopraval.cl':'Gonzalo Zapata','cmadridp@sopraval.cl':'Cristobal Madrid','ccrojas@sopraval.cl':'Cristian Rojas','cllopez@sopraval.cl':'Claudio Lopez' };
+// ¿El usuario puede editar el contenido del ADF? Admin/líder siempre; el creador solo antes de aprobar (o si está Observado)
+function esCreadorADF(a){ return a && (a.creadorId===CU.id || a.creadorEmail===CU.email); }
+function puedeEditarADF(a){ return esAdmin() || esLider() || (esCreadorADF(a) && ['PorVerificar','Observado','PlanAccion'].includes(a.estado)); }
+// Pendientes según el rol del usuario actual (para banner de inicio y badge de pestaña)
+function pendientesUsuario(){
+  const A=_cache.adfs||[];
+  if(esAdmin()) { const n=A.filter(a=>['PorVerificar','PlanAccion'].includes(a.estado)).length; return {n, texto:`${n} ADF por verificar (metodología)`}; }
+  if(esJefatura()){ const n=A.filter(a=>a.estado==='EnJefatura' && a.jefaturaAsignada && a.jefaturaAsignada.email===CU.email).length; return {n, texto:`${n} ADF por validar`}; }
+  const n=A.filter(a=>a.estado==='Observado' && esCreadorADF(a)).length; return {n, texto:`${n} ADF observado(s) para corregir`};
+}
 
 function toast(msg, type='info'){
   const t=document.createElement('div'); t.className='toast '+type; t.textContent=msg;
@@ -900,7 +910,16 @@ function escucharADFs(){
     _cache.adfs = snap.docs.map(d=>({ id:d.id, ...d.data() }))
       .sort((a,b)=> (b.createdAt||'').localeCompare(a.createdAt||''));
     if(['inicio','listado','seguimiento','tiempos','confiabilidad'].includes(_activeTab)) irTab(_activeTab);
+    actualizarBadges();
   });
+}
+
+// Badge con la cantidad de pendientes del rol en la pestaña "listado"
+function actualizarBadges(){
+  const btn=document.querySelector('.tab-btn[data-tab="listado"]'); if(!btn) return;
+  btn.querySelectorAll('.tab-badge').forEach(x=>x.remove());
+  const p=pendientesUsuario();
+  if(p.n>0){ const s=document.createElement('span'); s.className='tab-badge'; s.textContent=p.n; btn.appendChild(s); }
 }
 
 function misADFs(){
@@ -913,24 +932,28 @@ function misADFs(){
 function renderInicio(){
   const data = misADFs();
   const c = est => data.filter(a=>a.estado===est).length;
-  const abiertos = data.filter(a=>a.estado!=='Cerrado').length;
+  const abiertos = data.filter(a=>!['Cerrado'].includes(a.estado)).length;
   const recurrentes = data.filter(a=>a.tipoProblema==='Recurrente' && a.estado!=='Cerrado').length;
+  const p = pendientesUsuario();
+  const puedeCrear = !esJefatura() && !esVistaPMInd();
   $('pane-inicio').innerHTML = `
     <div class="page-title">Bienvenido, ${esc(CU.name.split(' ')[0])} 👋</div>
-    <div class="page-sub">Panel de Análisis de Falla · ${esLider()?'Vista global':'Tus análisis'}</div>
+    <div class="page-sub">Panel de Análisis de Falla · ${esLider()?'Vista global':(esJefatura()?'Validación de jefatura':'Tus análisis')}</div>
+    ${p.n>0?`<div class="alerta-pend" onclick="irTab('listado')">🔔 Tienes <b>${p.texto}</b> · <span class="ap-link">ver →</span></div>`:''}
     <div class="kpi-grid">
       <div class="kpi accent"><div class="k-val">${data.length}</div><div class="k-lbl">ADF totales</div></div>
-      <div class="kpi"><div class="k-val">${abiertos}</div><div class="k-lbl">Abiertos</div></div>
-      <div class="kpi"><div class="k-val">${c('Seguimiento')}</div><div class="k-lbl">En seguimiento</div></div>
+      <div class="kpi"><div class="k-val">${c('PorVerificar')+c('PlanAccion')}</div><div class="k-lbl">Por verificar</div></div>
+      <div class="kpi"><div class="k-val">${c('EnJefatura')}</div><div class="k-lbl">En jefatura</div></div>
+      <div class="kpi"><div class="k-val" style="color:var(--red)">${c('Observado')}</div><div class="k-lbl">Observados</div></div>
+      <div class="kpi"><div class="k-val">${c('Aprobado')+c('Seguimiento')}</div><div class="k-lbl">En seguimiento</div></div>
       <div class="kpi"><div class="k-val">${c('Cerrado')}</div><div class="k-lbl">Cerrados</div></div>
-      <div class="kpi"><div class="k-val" style="color:var(--red)">${recurrentes}</div><div class="k-lbl">Recurrentes abiertos</div></div>
     </div>
     ${esAdmin()?miniIndicadoresMes():''}
-    <div class="card">
+    ${puedeCrear?`<div class="card">
       <div class="card-title">⚡ Acción rápida</div>
       <div class="card-sub">Ingresa una nueva falla y deja que el sistema proponga el análisis de causa raíz.</div>
       <button class="btn-primary" onclick="irTab('nuevo')">➕ Registrar nueva falla (ADF)</button>
-    </div>
+    </div>`:''}
     <div class="section-head"><h3>Últimos análisis</h3></div>
     ${tablaADF(data.slice(0,6))}
   `;
@@ -961,10 +984,17 @@ function miniIndicadoresMes(){
    LISTADO
    ═══════════════════════════════════════════════════════════ */
 function renderListado(){
-  const data=misADFs();
+  let data=misADFs();
+  let titulo = esLider()?'Todos los ADF':'Mis ADF';
+  if(esJefatura()){
+    const orden={EnJefatura:0,Observado:1,Aprobado:2,Seguimiento:3,Cerrado:4};
+    data = _cache.adfs.filter(a=> a.jefaturaAsignada && a.jefaturaAsignada.email===CU.email)
+      .sort((a,b)=> (orden[a.estado]??9)-(orden[b.estado]??9));
+    titulo = 'ADF asignados para validar';
+  }
   $('pane-listado').innerHTML = `
-    <div class="page-title">${esLider()?'Todos los ADF':'Mis ADF'}</div>
-    <div class="page-sub">${data.length} registro(s) de análisis de falla</div>
+    <div class="page-title">${titulo}</div>
+    <div class="page-sub">${data.length} registro(s)${esJefatura()?` · ${data.filter(a=>a.estado==='EnJefatura').length} por validar`:' de análisis de falla'}</div>
     ${esAdmin()?`<div class="imp-bar">
       <button class="btn-ghost btn-sm" onclick="descargarPlantillaADF()">⬇ Plantilla Excel</button>
       <label class="btn-primary btn-sm imp-file">📥 Importar ADF terminados
@@ -2426,7 +2456,7 @@ function abrirADF(id){
       <span class="muted" style="margin-left:auto;font-size:.8rem">Creado por ${esc(a.creadorNombre||'—')} · ${fmtDT(a.createdAt)}</span>
     </div>
 
-    <div class="section-head"><h3>1 · Datos generales</h3>${(esLider()||esAdmin())?`<button class="btn-ghost btn-sm" onclick="editarCabecera('${a.id}')">✏️ Editar</button>`:''}</div>
+    <div class="section-head"><h3>1 · Datos generales</h3>${puedeEditarADF(a)?`<button class="btn-ghost btn-sm" onclick="editarCabecera('${a.id}')">✏️ Editar</button>`:''}</div>
     <div class="grid-3">
       <div><b>Folio:</b> ${esc(a.folio||'—')}</div><div><b>Fecha:</b> ${fmtD(a.fecha)}</div><div><b>Área:</b> ${esc(a.area||'—')}</div>
       <div><b>Línea:</b> ${esc(a.linea||'—')}</div><div><b>Equipo:</b> ${esc(a.equipo)}</div><div><b>Cód. SAP:</b> ${esc(a.codSap||'—')}</div>
@@ -2457,7 +2487,8 @@ function abrirADF(id){
     </div>
     ${a.imagen?`<img class="img-preview" src="${a.imagen}" style="margin-top:10px;max-width:280px">`:''}
 
-    <div class="section-head"><h3>4 · Causas probables ${a.analisis?`<small class="muted">(${esc(a.analisis.modoDetectado)}${(a.analisis.tipoEquipo&&a.analisis.tipoEquipo.length)?' · '+esc(a.analisis.tipoEquipo.join(' · ')):''})</small>`:''}</h3></div>
+    <div class="section-head"><h3>4 · Causas probables ${a.analisis?`<small class="muted">(${esc(a.analisis.modoDetectado)}${(a.analisis.tipoEquipo&&a.analisis.tipoEquipo.length)?' · '+esc(a.analisis.tipoEquipo.join(' · ')):''})</small>`:''}</h3>${puedeEditarADF(a)?`<button class="btn-ghost btn-sm" onclick="editarAnalisis('${a.id}')">✏️ Editar análisis</button>`:''}</div>
+    <div id="an-edit"></div>
     <div class="causa-list">${(a.analisis?.causas||[]).map((c,i)=>
       `<div class="causa-item ${c.probable?'probable':''}"><span class="c-num">${i+1}</span><span class="c-txt">${esc(c.txt)} ${c.cat?`<span class="cat-tag">${esc(c.cat)}</span>`:''} ${c.origen?`<span class="origen-tag">${esc(c.origen)}</span>`:''} ${c.probable?'<b style="color:var(--orange-dk)"> ← probable</b>':''}</span></div>`).join('')}</div>
     ${a.analisis?.sintesis?sintesisHTML(a.analisis.sintesis):''}
@@ -2487,6 +2518,75 @@ function abrirADF(id){
     ${a.estado==='Cerrado'?`<p class="muted" style="margin-top:12px">🔒 Cerrado por ${esc(a.cerradoPor)} · ${fmtDT(a.cerradoAt)}</p>`:''}
   `;
   $('modal-detalle').classList.add('open');
+}
+
+/* ── Editor de análisis (causas / 5 porqués / planes) de un ADF existente ── */
+let _anEdit=null, _anEditId=null;
+function editarAnalisis(id){
+  const a=_cache.adfs.find(x=>x.id===id); if(!a||!puedeEditarADF(a)) return;
+  const z=$('an-edit'); if(!z) return;
+  if(z.dataset.open==='1'){ z.innerHTML=''; z.dataset.open='0'; _anEdit=null; return; }
+  const an=a.analisis||{};
+  _anEditId=id;
+  _anEdit={
+    causas:(an.causas||[]).map(c=>({txt:c.txt||'',cat:c.cat||'Máquina',probable:!!c.probable,origen:c.origen||'Manual'})),
+    porques:(an.porques||[]).slice(),
+    planes:(an.planes||[]).map(p=>({actividad:p.actividad||'',responsable:p.responsable||'',fecha:p.fecha||'',tipo:p.tipo||'PERMANENTE'})),
+  };
+  z.dataset.open='1'; anEditRender();
+}
+function anEditRender(){
+  const z=$('an-edit'); if(!z||!_anEdit) return;
+  const cOpts=v=>CATS_6M.map(o=>`<option ${o===v?'selected':''}>${o}</option>`).join('');
+  z.innerHTML=`<div class="an-edit-box">
+    <b>Causas</b>
+    ${_anEdit.causas.map((c,i)=>`<div class="an-row">
+      <input value="${esc(c.txt)}" placeholder="Causa" oninput="anSet('causas',${i},'txt',this.value)">
+      <select onchange="anSet('causas',${i},'cat',this.value)">${cOpts(c.cat)}</select>
+      <label class="an-chk"><input type="checkbox" ${c.probable?'checked':''} onchange="anSet('causas',${i},'probable',this.checked)"> probable</label>
+      <button class="an-del" onclick="anDel('causas',${i})">✕</button></div>`).join('')}
+    <button class="btn-ghost btn-sm" onclick="anAdd('causas')">➕ Causa</button>
+
+    <b style="margin-top:10px;display:block">5 Porqués</b>
+    ${_anEdit.porques.map((p,i)=>`<div class="an-row">
+      <input value="${esc(p)}" placeholder="¿Por qué ${i+1}?" oninput="anSetP(${i},this.value)">
+      <button class="an-del" onclick="anDel('porques',${i})">✕</button></div>`).join('')}
+    <button class="btn-ghost btn-sm" onclick="anAdd('porques')">➕ Porqué</button>
+
+    <b style="margin-top:10px;display:block">Planes de acción</b>
+    ${_anEdit.planes.map((p,i)=>`<div class="an-row an-plan">
+      <input value="${esc(p.actividad)}" placeholder="Actividad" oninput="anSet('planes',${i},'actividad',this.value)">
+      <input value="${esc(p.responsable)}" placeholder="Responsable" oninput="anSet('planes',${i},'responsable',this.value)">
+      <input type="date" value="${esc(p.fecha)}" onchange="anSet('planes',${i},'fecha',this.value)">
+      <select onchange="anSet('planes',${i},'tipo',this.value)"><option ${p.tipo==='INMEDIATA'?'selected':''}>INMEDIATA</option><option ${p.tipo!=='INMEDIATA'?'selected':''}>PERMANENTE</option></select>
+      <button class="an-del" onclick="anDel('planes',${i})">✕</button></div>`).join('')}
+    <button class="btn-ghost btn-sm" onclick="anAdd('planes')">➕ Plan</button>
+
+    <div style="margin-top:12px;display:flex;gap:8px">
+      <button class="btn-green btn-sm" onclick="guardarAnalisis('${_anEditId}')">💾 Guardar análisis</button>
+      <button class="btn-ghost btn-sm" onclick="editarAnalisis('${_anEditId}')">Cancelar</button>
+    </div>
+  </div>`;
+}
+function anSet(arr,i,campo,val){ if(_anEdit&&_anEdit[arr][i]) _anEdit[arr][i][campo]=val; }
+function anSetP(i,val){ if(_anEdit) _anEdit.porques[i]=val; }
+function anAdd(arr){ if(!_anEdit) return; if(arr==='causas')_anEdit.causas.push({txt:'',cat:'Máquina',probable:false,origen:'Manual'}); else if(arr==='porques')_anEdit.porques.push(''); else _anEdit.planes.push({actividad:'',responsable:'',fecha:'',tipo:'PERMANENTE'}); anEditRender(); }
+function anDel(arr,i){ if(!_anEdit) return; _anEdit[arr].splice(i,1); anEditRender(); }
+async function guardarAnalisis(id){
+  const a=_cache.adfs.find(x=>x.id===id); if(!a||!_anEdit) return;
+  const causas=_anEdit.causas.filter(c=>c.txt.trim()).map(c=>({txt:c.txt.trim(),cat:c.cat,probable:!!c.probable,origen:c.origen||'Manual'}));
+  const porques=_anEdit.porques.map(p=>String(p).trim()).filter(Boolean);
+  const planes=_anEdit.planes.filter(p=>p.actividad.trim()).map(p=>({actividad:p.actividad.trim(),responsable:p.responsable.trim(),fecha:p.fecha||'',tipo:(p.tipo||'PERMANENTE').toUpperCase()}));
+  const an=Object.assign({}, a.analisis||{}, {causas,porques,planes});
+  const prev=a.seguimiento||[];
+  const seg=planes.map(p=>{ const ex=prev.find(s=>s.actividad===p.actividad); return ex || {actividad:p.actividad,fechaSolucion:'',realizado:'',hecho:false,imagen:'',comentario:''}; });
+  const now=new Date().toISOString();
+  try{
+    await fdb.collection(COL_ADF).doc(id).update({ analisis:an, seguimiento:seg, updatedAt:now,
+      historial:firebase.firestore.FieldValue.arrayUnion({ accion:'Análisis editado', usuario:CU.name, fecha:now }) });
+    a.analisis=an; a.seguimiento=seg; _anEdit=null;
+    toast('Análisis actualizado.','ok'); abrirADF(id);
+  }catch(e){ toast('Error: '+e.message,'err'); }
 }
 
 /* ── Verificación / validación del ADF (2 niveles) ── */
@@ -2893,6 +2993,13 @@ async function guardarSeguimiento(id){
 }
 
 async function cerrarADF(id){
+  const a=_cache.adfs.find(x=>x.id===id);
+  if(a){
+    const planes=(a.analisis?.planes||[]).filter(p=>p.fecha);
+    const seg=a.seguimiento||[];
+    const pend=planes.filter((p,i)=> !(seg[i] && seg[i].planAprobado)).length;
+    if(pend>0 && !confirm(`Quedan ${pend} plan(es) de acción sin validar/aprobar. ¿Cerrar el ADF de todos modos?`)) return;
+  }
   await fdb.collection(COL_ADF).doc(id).update({
     estado:'Cerrado', cerradoPor:CU.name, cerradoAt:new Date().toISOString(),
     updatedAt:new Date().toISOString(),
@@ -3239,6 +3346,7 @@ Object.assign(window,{ irTab, abrirADF, marcarProbable, editCausa, editPorque, e
   agregarPlan, editSeg, guardarSeguimiento, cerrarADF, eliminarADF,
   concluirPlan, subirImgSeg, verImagenSeg, subirRespaldo, verRespaldo, exportarA3,
   descargarPlantillaADF, importarADFExcel, editarCabecera, autoCabecera, guardarCabecera, normalizarAreasGuardadas,
+  editarAnalisis, anSet, anSetP, anAdd, anDel, guardarAnalisis,
   derivarJefatura, aprobarJefatura, observarADF, reenviarVerificacion,
   enviarAValidar, aprobarPlan, rechazarPlan,
   abrirNuevoPlan, abrirPlanMP, guardarPlanMP, eliminarPlanMP,

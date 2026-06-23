@@ -173,6 +173,16 @@ table.data .row-click { cursor:pointer; }
 .ob-item { color:#444; padding:2px 0; }
 .avance-fill.sem-validar { background:#2563EB; }
 .plazo-tag.sem-validar { background:#DBEAFE; color:#1D4ED8; }
+.alerta-pend { background:#FEF3C7; border:1px solid #FCD34D; color:#92400E; border-radius:10px; padding:10px 14px; margin-bottom:14px; cursor:pointer; font-size:.9rem; }
+.alerta-pend .ap-link { color:#1D4ED8; font-weight:700; }
+.tab-badge { display:inline-block; min-width:18px; height:18px; line-height:18px; text-align:center; background:var(--red); color:#fff; border-radius:9px; font-size:.7rem; font-weight:700; margin-left:6px; padding:0 5px; }
+.an-edit-box { background:var(--gray-lt); border:1px solid var(--border); border-radius:10px; padding:12px 14px; margin:8px 0; }
+.an-row { display:flex; gap:8px; align-items:center; margin:6px 0; flex-wrap:wrap; }
+.an-row input, .an-row select { padding:6px 8px; border:1px solid var(--border); border-radius:7px; font-size:.85rem; }
+.an-row > input:first-child { flex:1; min-width:160px; }
+.an-plan input, .an-plan select { min-width:110px; }
+.an-chk { font-size:.8rem; display:inline-flex; align-items:center; gap:4px; white-space:nowrap; }
+.an-del { background:#fdecec; color:#b91c1c; border:none; border-radius:7px; width:28px; height:28px; cursor:pointer; font-weight:700; }
 .b-recurrente { background:var(--red-lt); color:var(--red); }
 .b-esporadico { background:var(--blue-lt); color:var(--blue); }
 .b-inmediata { background:var(--amber-lt); color:var(--amber); }

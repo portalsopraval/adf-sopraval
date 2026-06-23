@@ -1044,7 +1044,7 @@ function renderListado(){
 function tablaADF(list){
   if(!list.length) return `<div class="empty"><div class="e-icon">📭</div>No hay ADF registrados aún.</div>`;
   return `<div class="tbl-wrap"><table class="data">
-    <thead><tr><th>Folio</th><th>Fecha</th><th>Área</th><th>Equipo</th><th>Síntoma</th><th>Tipo</th><th>Estado</th><th></th></tr></thead>
+    <thead><tr><th>Folio</th><th>Fecha</th><th>Área</th><th>Equipo</th><th>Síntoma</th><th>Tipo</th><th>Estado</th><th>Plazo</th><th></th></tr></thead>
     <tbody>${list.map(a=>`
       <tr class="row-click" onclick="abrirADF('${a.id}')">
         <td class="nowrap"><b>${esc(a.folio||'—')}</b></td>
@@ -1054,6 +1054,7 @@ function tablaADF(list){
         <td>${esc((a.sintoma||'—').slice(0,40))}</td>
         <td>${a.tipoProblema==='Recurrente'?'<span class="badge b-recurrente">Recurrente</span>':'<span class="badge b-esporadico">Esporádico</span>'}</td>
         <td>${badge(a.estado)}</td>
+        <td class="nowrap">${plazoBadge(a)||'<span class="muted">—</span>'}</td>
         <td><button class="btn-ghost btn-sm">Abrir</button></td>
       </tr>`).join('')}</tbody>
   </table></div>`;
@@ -1865,6 +1866,42 @@ function fmtDur(h){
   return (Math.round(h/24*10)/10) + ' días';
 }
 
+/* ── Criticidad y plazos de cierre del ADF ──────────────────────
+   Plazo de cierre según criticidad, contado desde la fecha de la falla.
+   Criticidad: manual (a.criticidad) con sugerencia automática por detención. */
+const CRITICIDADES = ['Alta','Media','Baja'];
+const PLAZOS_CRITICIDAD = { Alta:7, Media:15, Baja:30 };
+function criticidadSugerida(a){
+  const h = downtimeHoras(a);
+  if(h!=null){ if(h>=4) return 'Alta'; if(h>=1) return 'Media'; return 'Baja'; }
+  const min = parseFloat(a.minutosPerdidos)||0;   // respaldo: minutos perdidos de producción
+  if(min>=240) return 'Alta';
+  if(min>=60)  return 'Media';
+  return 'Baja';
+}
+function criticidadDe(a){ return (a && CRITICIDADES.includes(a.criticidad)) ? a.criticidad : criticidadSugerida(a); }
+// Estado del plazo de cierre (null si está cerrado o sin fecha base)
+function plazoADF(a){
+  if(!a || a.estado==='Cerrado') return null;
+  const base = a.fechaInicio || a.fecha; if(!base) return null;
+  const ini = new Date(base + 'T00:00:00'); if(isNaN(ini.getTime())) return null;
+  const crit = criticidadDe(a);
+  const dias = PLAZOS_CRITICIDAD[crit] || 30;
+  const vence = new Date(ini.getTime() + dias*86400000);
+  const hoy = new Date(); hoy.setHours(0,0,0,0);
+  const diasRest = Math.ceil((vence.getTime() - hoy.getTime())/86400000);
+  let nivel = 'ok';
+  if(diasRest < 0) nivel = 'vencido';
+  else if(diasRest <= Math.ceil(dias*0.25)) nivel = 'porVencer';
+  return { crit, dias, vence, diasRest, nivel };
+}
+function plazoBadge(a){
+  const p = plazoADF(a); if(!p) return '';
+  const ic = p.nivel==='vencido'?'🔴':(p.nivel==='porVencer'?'🟡':'🟢');
+  const txt = p.nivel==='vencido' ? `Vencido ${-p.diasRest} d` : (p.diasRest===0?'Vence hoy':`${p.diasRest} d`);
+  return `<span class="plazo-badge pz-${p.nivel}" title="Criticidad ${p.crit} · plazo ${p.dias} días · vence ${p.vence.toISOString().slice(0,10)}">${ic} ${esc(txt)}</span>`;
+}
+
 // Calcula métricas por equipo (agrupa por SAP; si no hay, por nombre)
 function calcConfiabilidad(list){
   const grupos = {};
@@ -2499,6 +2536,10 @@ function abrirADF(id){
       <div><b>Línea:</b> ${esc(a.linea||'—')}</div><div><b>Equipo:</b> ${esc(a.equipo)}</div><div><b>Cód. SAP:</b> ${esc(a.codSap||'—')}</div>
       <div><b>OT:</b> ${esc(a.ot||'—')}</div><div><b>Componente:</b> ${esc(a.componente||'—')}</div>
     </div>
+    <div style="margin-top:8px;display:flex;gap:14px;align-items:center;flex-wrap:wrap;font-size:.9rem">
+      <span><b>Criticidad:</b> <span class="crit-tag crit-${criticidadDe(a)}">${criticidadDe(a)}</span>${a.criticidad?'':' <small class="muted">(auto)</small>'}</span>
+      ${a.estado!=='Cerrado'?`<span><b>Plazo de cierre:</b> ${plazoBadge(a)} <small class="muted">(${PLAZOS_CRITICIDAD[criticidadDe(a)]} días desde la falla)</small></span>`:''}
+    </div>
     <div id="cab-edit"></div>
     <p style="margin-top:8px;font-size:.88rem"><b>👥 Equipo del análisis:</b> ${(a.equipoAnalisis&&a.equipoAnalisis.length)?a.equipoAnalisis.filter(p=>p.nombre).map(p=>`${esc(p.nombre)}${p.area?' <span class="cat-tag">'+esc(p.area)+'</span>':''}`).join(' · ')||'—':'—'}</p>
     <p style="font-size:.88rem"><b>🔧 Participantes en la reparación:</b> ${(a.participantes&&a.participantes.length)?a.participantes.filter(p=>p.nombre).map(p=>`${esc(p.nombre)} <span class="cat-tag">${esc(p.rol||'')}</span>`).join(' · ')||'—':'—'}</p>
@@ -2755,6 +2796,10 @@ function editarCabecera(id){
         <div class="field"><label>Fecha puesta en marcha</label><input type="date" id="cf-fmarcha" value="${esc(a.fechaMarcha||'')}"></div>
         <div class="field"><label>Hora puesta en marcha</label><input type="time" id="cf-hmarcha" value="${esc(a.horaMarcha||'')}"></div>
         <div class="field"><label>Min. perdidos</label><input id="cf-min" value="${esc(a.minutosPerdidos||'')}"></div>
+        <div class="field"><label>Criticidad <small style="color:var(--gray)">(fija el plazo)</small></label><select id="cf-crit">
+          <option value="">Auto (sugerida: ${criticidadSugerida(a)})</option>
+          ${CRITICIDADES.map(c=>`<option value="${c}" ${a.criticidad===c?'selected':''}>${c} · ${PLAZOS_CRITICIDAD[c]} días</option>`).join('')}
+        </select></div>
       </div>
       <div class="field"><label>Síntoma</label><textarea id="cf-sintoma">${esc(a.sintoma||'')}</textarea></div>
       <div class="field"><label>Modo de falla</label><textarea id="cf-modo">${esc(a.modoFalla||'')}</textarea></div>
@@ -2795,11 +2840,14 @@ async function guardarCabecera(id){
     updatedAt:new Date().toISOString(),
   };
   if(!campos.equipo){ toast('El equipo no puede quedar vacío.','err'); return; }
+  const critVal = ($('cf-crit')?.value||'').trim();  // '' = Auto (sin criticidad fija)
   try{
     await fdb.collection(COL_ADF).doc(id).update(Object.assign({}, campos, {
+      criticidad: critVal || firebase.firestore.FieldValue.delete(),
       historial:firebase.firestore.FieldValue.arrayUnion({ accion:'Cabecera editada', usuario:CU.name, fecha:new Date().toISOString() }),
     }));
-    Object.assign(a, campos); if(a.analisis) a.analisis.modoDetectado = campos.modoFalla || a.analisis.modoDetectado;
+    Object.assign(a, campos); if(critVal) a.criticidad=critVal; else delete a.criticidad;
+    if(a.analisis) a.analisis.modoDetectado = campos.modoFalla || a.analisis.modoDetectado;
     toast('Datos actualizados.','ok');
     abrirADF(id);
   }catch(e){ toast('Error al guardar: '+e.message,'err'); }

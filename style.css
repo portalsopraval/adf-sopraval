@@ -183,6 +183,14 @@ table.data .row-click { cursor:pointer; }
 .an-plan input, .an-plan select { min-width:110px; }
 .an-chk { font-size:.8rem; display:inline-flex; align-items:center; gap:4px; white-space:nowrap; }
 .an-del { background:#fdecec; color:#b91c1c; border:none; border-radius:7px; width:28px; height:28px; cursor:pointer; font-weight:700; }
+.plazo-badge { display:inline-block; padding:2px 8px; border-radius:9px; font-size:.74rem; font-weight:700; white-space:nowrap; }
+.plazo-badge.pz-ok { background:#DCFCE7; color:#166534; }
+.plazo-badge.pz-porVencer { background:#FEF3C7; color:#92400E; }
+.plazo-badge.pz-vencido { background:#FEE2E2; color:#B91C1C; }
+.crit-tag { display:inline-block; padding:1px 8px; border-radius:9px; font-size:.74rem; font-weight:700; }
+.crit-Alta { background:#FEE2E2; color:#B91C1C; }
+.crit-Media { background:#FEF3C7; color:#92400E; }
+.crit-Baja { background:#E0E7FF; color:#3730A3; }
 .b-recurrente { background:var(--red-lt); color:var(--red); }
 .b-esporadico { background:var(--blue-lt); color:var(--blue); }
 .b-inmediata { background:var(--amber-lt); color:var(--amber); }

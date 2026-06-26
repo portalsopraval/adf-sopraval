@@ -881,7 +881,7 @@ async function cargarUsuarios(){
    ═══════════════════════════════════════════════════════════ */
 const TABS = {
   tecnico: [['inicio','🏠 Inicio'],['nuevo','➕ Nuevo ADF'],['listado','📋 Mis ADF'],['seguimiento','📌 Seguimiento'],['tiempos','⏱ Control de Tiempos']],
-  lider:   [['inicio','🏠 Inicio'],['nuevo','➕ Nuevo ADF'],['listado','📋 Todos los ADF'],['seguimiento','📌 Seguimiento'],['tiempos','⏱ Control de Tiempos'],['mantenimiento','🔧 Planes PM'],['catalogo','📚 Catálogo'],['usuarios','👥 Usuarios']],
+  lider:   [['inicio','🏠 Inicio'],['nuevo','➕ Nuevo ADF'],['listado','📋 Todos los ADF'],['seguimiento','📌 Seguimiento'],['tiempos','⏱ Control de Tiempos'],['lamina','📊 Lámina PM'],['mantenimiento','🔧 Planes PM'],['catalogo','📚 Catálogo'],['usuarios','👥 Usuarios']],
 };
 
 function arrancarApp(){
@@ -896,13 +896,13 @@ function arrancarApp(){
 
 function renderTabs(){
   if(esVistaPMInd()){
-    const tabs = [['mantenimiento','🔧 Planes PM'],['confiabilidad','📊 Indicadores']];
+    const tabs = [['mantenimiento','🔧 Planes PM'],['lamina','📊 Lámina PM'],['confiabilidad','📊 Indicadores']];
     $('tabs-nav').innerHTML = tabs.map(([k,l])=>`<button class="tab-btn" data-tab="${k}">${l}</button>`).join('');
     $('tabs-nav').querySelectorAll('.tab-btn').forEach(b=> b.addEventListener('click', ()=>irTab(b.dataset.tab)));
     return;
   }
   if(esJefatura()){
-    const tabs = [['inicio','🏠 Inicio'],['listado','📋 ADF a validar'],['tiempos','⏱ Control de Tiempos'],['confiabilidad','📊 Indicadores']];
+    const tabs = [['inicio','🏠 Inicio'],['listado','📋 ADF a validar'],['tiempos','⏱ Control de Tiempos'],['lamina','📊 Lámina PM'],['confiabilidad','📊 Indicadores']];
     $('tabs-nav').innerHTML = tabs.map(([k,l])=>`<button class="tab-btn" data-tab="${k}">${l}</button>`).join('');
     $('tabs-nav').querySelectorAll('.tab-btn').forEach(b=> b.addEventListener('click', ()=>irTab(b.dataset.tab)));
     return;
@@ -921,8 +921,8 @@ function renderTabs(){
 
 function irTab(tab){
   if(tab==='confiabilidad' && !esAdmin() && !esVistaPMInd() && !esJefatura()) tab='inicio';
-  if(esVistaPMInd() && tab!=='confiabilidad' && tab!=='mantenimiento') tab='mantenimiento';
-  if(esJefatura() && !['inicio','listado','tiempos','confiabilidad'].includes(tab)) tab='listado';
+  if(esVistaPMInd() && !['confiabilidad','mantenimiento','lamina'].includes(tab)) tab='mantenimiento';
+  if(esJefatura() && !['inicio','listado','tiempos','confiabilidad','lamina'].includes(tab)) tab='listado';
   _activeTab=tab;
   $('tabs-nav').querySelectorAll('.tab-btn').forEach(b=>
     b.classList.toggle('active', b.dataset.tab===tab));
@@ -933,6 +933,7 @@ function irTab(tab){
   if(tab==='nuevo') renderNuevo();
   if(tab==='seguimiento') renderSeguimiento();
   if(tab==='tiempos') renderTiempos();
+  if(tab==='lamina') renderLamina();
   if(tab==='confiabilidad') renderConfiabilidad();
   if(tab==='mantenimiento') renderMantenimiento();
   if(tab==='catalogo') renderCatalogo();
@@ -1700,6 +1701,224 @@ function renderTiempos(){
     </div>
     ${rows.length ? tiemposTabla(rows) : `<div class="empty"><div class="e-icon">⏱</div>No hay planes de acción en seguimiento (el ADF debe estar aprobado por jefatura).</div>`}
   `;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   LÁMINA PM — Estado de ADF + Seguimiento de planes.
+   Réplica visual de las diapositivas y exportable a PPTX
+   (mismo formato que Status-ADF-Lamina-PM.pptx). Fuente: el portal.
+   ═══════════════════════════════════════════════════════════ */
+let _laminaUpdate = '';   // fecha de la última "actualización semanal" (ISO)
+
+function fechaCL(iso){ if(!iso) return ''; const m=String(iso).split('-'); return m.length===3?`${m[2]}/${m[1]}/${m[0]}`:iso; }
+function fechaLarga(d){ try{ return new Date(d).toLocaleDateString('es-CL',{day:'2-digit',month:'long',year:'numeric'}); }catch(e){ return ''; } }
+
+// estado del flujo del portal -> estado PM (3 categorías de la lámina)
+function estadoPM(a){
+  if(['Aprobado','Seguimiento','PlanAccion','Cerrado'].includes(a.estado)) return 'Generado';
+  if(a.estado==='EnJefatura') return 'En proceso';
+  return 'Pendiente'; // PorVerificar / Observado
+}
+
+// arma los datos de la lámina desde el cache vivo (mismo criterio que Control de Tiempos)
+function laminaData(){
+  const adfs = _cache.adfs.slice().sort((a,b)=>(a.folio||'').localeCompare(b.folio||''));
+  const A = adfs.map(a=>({ nAdf:a.folio||a.id, area:normArea(a.area)||'—', equipo:a.equipo||'—', fecha:fechaCL(a.fechaInicio), status:estadoPM(a) }));
+  const today=new Date(); today.setHours(0,0,0,0);
+  const grupos=[];
+  adfs.filter(a=>['Aprobado','Seguimiento','PlanAccion'].includes(a.estado)).forEach(a=>{
+    const planes=(a.analisis&&a.analisis.planes)||[]; const seg=a.seguimiento||[];
+    planes.forEach((pl,i)=>{
+      if(!pl.fecha) return;
+      const s=seg[i]||{};
+      if(s.planAprobado) return;                 // plan cerrado → no aparece en la lámina
+      const atrasado = !s.porValidar && new Date(pl.fecha+'T00:00:00')<today;
+      let g=grupos.find(x=>x.adf===(a.folio||a.id));
+      if(!g){ g={ adf:a.folio||a.id, area:normArea(a.area), equipo:a.equipo, fInicio:fechaCL(a.fechaInicio), planes:[] }; grupos.push(g); }
+      g.planes.push({ plan:pl.actividad||'', responsable:pl.responsable||'', fCompr:fechaCL(pl.fecha), atrasado });
+    });
+  });
+  return { A, grupos };
+}
+
+async function renderLamina(){
+  // carga la fecha de última actualización (config 'lamina')
+  if(!_laminaUpdate){
+    try{ const d=await fdb.collection(COL_CFG).doc('lamina').get(); if(d.exists&&d.data().lastUpdate) _laminaUpdate=d.data().lastUpdate; }catch(e){}
+  }
+  const fechaTxt = _laminaUpdate ? fechaLarga(_laminaUpdate) : fechaLarga(new Date().toISOString());
+  const { A, grupos } = laminaData();
+  const total=A.length;
+  const gen=A.filter(d=>d.status==='Generado'), enp=A.filter(d=>d.status==='En proceso'), pen=A.filter(d=>d.status==='Pendiente');
+  const pct=n=>total?Math.round(n*100/total)+'%':'0%';
+  const totalPlanes=grupos.reduce((s,g)=>s+g.planes.length,0);
+  const nAtras=grupos.reduce((s,g)=>s+g.planes.filter(p=>p.atrasado).length,0);
+  const nEnProc=totalPlanes-nAtras;
+
+  const cols=[
+    {t:'Generados', cls:'gen', items:gen},
+    {t:'En proceso',cls:'enp', items:enp},
+    {t:'Pendientes',cls:'pen', items:pen},
+  ];
+  const colHTML = cols.map(c=>`
+    <div class="lam-col">
+      <div class="lam-col-head lam-${c.cls}"><span class="lam-dot"></span>${c.t}<span class="lam-col-n">${c.items.length}</span></div>
+      <div class="lam-col-body">
+        ${c.items.length? c.items.map(it=>`
+          <div class="lam-item">
+            <div class="lam-item-top"><b>${esc(it.nAdf)}</b> <span class="lam-area lam-${c.cls}-tx">${esc(it.area)}</span></div>
+            <div class="lam-item-eq">${esc(it.equipo)}</div>
+            <div class="lam-item-f">Avería: ${esc(it.fecha||'s/f')}</div>
+          </div>`).join('') : `<div class="lam-empty">— Sin ADF —</div>`}
+      </div>
+    </div>`).join('');
+
+  const tablaHTML = grupos.length ? grupos.map(g=>`
+    <div class="lam-grp">
+      <div class="lam-grp-head">${esc(g.adf)} · ${esc(g.area)} · ${esc(g.equipo)} · Inicio ${esc(g.fInicio)} · (${g.planes.length} ${g.planes.length===1?'plan':'planes'})</div>
+      ${g.planes.map(p=>`
+        <div class="lam-prow">
+          <span class="lam-est ${p.atrasado?'lam-atr':'lam-prc'}">${p.atrasado?'Atrasado':'En proceso'}</span>
+          <span class="lam-plan">${esc(p.plan)}</span>
+          <span class="lam-resp">${esc(p.responsable)}</span>
+          <span class="lam-comp ${p.atrasado?'lam-atr-tx':''}">${esc(p.fCompr)}${p.atrasado?' ▲':''}</span>
+        </div>`).join('')}
+    </div>`).join('') : `<div class="lam-empty">No hay planes abiertos.</div>`;
+
+  $('pane-lamina').innerHTML = `
+    <div class="lam-toolbar">
+      <div><div class="page-title">📊 Lámina PM</div><div class="page-sub">Estado de ADF + seguimiento de planes · exportable a PowerPoint</div></div>
+      <div class="lam-actions">
+        <span class="lam-upd">Actualizado: <b>${fechaTxt}</b></span>
+        <button class="btn-secondary" id="lam-refresh">🔄 Actualizar</button>
+        <button class="btn-primary" id="lam-pptx">⬇ Descargar PPTX</button>
+      </div>
+    </div>
+
+    <!-- LÁMINA 1 -->
+    <div class="lam-slide">
+      <div class="lam-band"><div><div class="lam-band-t">Estado de ADF — Pilar PM</div><div class="lam-band-s">Análisis de Falla · Mantenimiento Planeado Sopraval</div></div>
+        <div class="lam-band-r">● Datos del portal<br><span>Actualizado: ${fechaTxt}</span></div></div>
+      <div class="lam-kpis">
+        <div class="lam-kpi"><div class="lam-kpi-l">Total ADF</div><div class="lam-kpi-v c-azul">${total}</div></div>
+        <div class="lam-kpi"><div class="lam-kpi-l">Generados</div><div class="lam-kpi-v c-verde">${gen.length} <small>${pct(gen.length)}</small></div></div>
+        <div class="lam-kpi"><div class="lam-kpi-l">En proceso</div><div class="lam-kpi-v c-ambar">${enp.length} <small>${pct(enp.length)}</small></div></div>
+        <div class="lam-kpi"><div class="lam-kpi-l">Pendientes</div><div class="lam-kpi-v c-rojo">${pen.length} <small>${pct(pen.length)}</small></div></div>
+      </div>
+      <div class="lam-cols">${colHTML}</div>
+      <div class="lam-foot">Fuente: Portal ADF (Firestore) · ${total} ADF en total</div>
+    </div>
+
+    <!-- LÁMINA 2 -->
+    <div class="lam-slide">
+      <div class="lam-band"><div><div class="lam-band-t">Seguimiento de Planes de Acción</div><div class="lam-band-s">Planes atrasados y en proceso · Mantenimiento Planeado Sopraval</div></div>
+        <div class="lam-band-r">● Datos del portal<br><span>Actualizado: ${fechaTxt}</span></div></div>
+      <div class="lam-kpis">
+        <div class="lam-kpi"><div class="lam-kpi-l">ADF con planes</div><div class="lam-kpi-v c-azul">${grupos.length}</div></div>
+        <div class="lam-kpi"><div class="lam-kpi-l">Planes abiertos</div><div class="lam-kpi-v c-azul">${totalPlanes}</div></div>
+        <div class="lam-kpi"><div class="lam-kpi-l">Atrasados</div><div class="lam-kpi-v c-rojooscuro">${nAtras}</div></div>
+        <div class="lam-kpi"><div class="lam-kpi-l">En proceso</div><div class="lam-kpi-v c-ambar">${nEnProc}</div></div>
+      </div>
+      <div class="lam-tbl">
+        <div class="lam-thead"><span>Estado</span><span>Plan de acción</span><span>Responsable</span><span>Compromiso</span></div>
+        ${tablaHTML}
+      </div>
+      <div class="lam-foot">Fuente: Portal ADF · agrupado por ADF · Atrasado = compromiso vencido (▲) · ${totalPlanes} planes</div>
+    </div>`;
+
+  $('lam-pptx').addEventListener('click', generarLaminaPPTX);
+  $('lam-refresh').addEventListener('click', async()=>{
+    const now=new Date().toISOString();
+    try{ await fdb.collection(COL_CFG).doc('lamina').set({ lastUpdate:now, por:CU.email }, {merge:true}); }catch(e){}
+    _laminaUpdate=now;
+    renderLamina();
+    toast('Lámina actualizada con los datos actuales del portal.','ok');
+  });
+}
+
+// ── Exportar a PowerPoint (mismo formato que las diapositivas) ──
+function generarLaminaPPTX(){
+  if(typeof PptxGenJS==='undefined'){ toast('Librería PPTX no cargó. Reintenta.','err'); return; }
+  const { A, grupos } = laminaData();
+  const AZUL='1B3580',VERDE='0F6E56',VERDEBG='E1F5EE',AMBAR='854F0B',AMBARBG='FAEEDA',
+        ROJO='A32D2D',ROJOBG='FCEBEB',GRIS='6B7280',TINTA='1F2330',LINEA='E6E8EE',
+        ATR_C='7A1414',ATR_BG='F2C9C9';
+  const grupos3={ Generado:A.filter(d=>d.status==='Generado'), 'En proceso':A.filter(d=>d.status==='En proceso'), Pendiente:A.filter(d=>d.status==='Pendiente') };
+  const total=A.length, pct=n=>total?Math.round(n*100/total)+'%':'0%';
+  const hoy=_laminaUpdate?fechaLarga(_laminaUpdate):fechaLarga(new Date().toISOString());
+
+  const p=new PptxGenJS();
+  p.defineLayout({ name:'W', width:13.333, height:7.5 }); p.layout='W';
+  const cut=(t,n)=>(t&&t.length>n)?t.slice(0,n-1).trim()+'…':(t||'');
+
+  // ---- LÁMINA 1 ----
+  const s=p.addSlide(); s.background={color:'FFFFFF'};
+  s.addShape(p.ShapeType.rect,{x:0,y:0,w:13.333,h:1.15,fill:{color:AZUL}});
+  s.addText('Estado de ADF — Pilar PM',{x:0.5,y:0.12,w:9,h:0.55,fontFace:'Calibri',fontSize:30,bold:true,color:'FFFFFF'});
+  s.addText('Análisis de Falla · Mantenimiento Planeado Sopraval',{x:0.5,y:0.66,w:9,h:0.35,fontFace:'Calibri',fontSize:13,color:'CADCFC'});
+  s.addText('● Datos del portal',{x:9.5,y:0.18,w:3.3,h:0.35,align:'right',fontFace:'Calibri',fontSize:13,bold:true,color:'FFFFFF'});
+  s.addText('Actualizado: '+hoy,{x:9.5,y:0.55,w:3.3,h:0.35,align:'right',fontFace:'Calibri',fontSize:12,color:'CADCFC'});
+  const kpis=[{l:'Total ADF',v:String(total),p:'',c:AZUL},{l:'Generados',v:String(grupos3.Generado.length),p:pct(grupos3.Generado.length),c:VERDE},{l:'En proceso',v:String(grupos3['En proceso'].length),p:pct(grupos3['En proceso'].length),c:AMBAR},{l:'Pendientes',v:String(grupos3.Pendiente.length),p:pct(grupos3.Pendiente.length),c:ROJO}];
+  const kpW=2.95,kpGap=0.18,kpX0=0.5,kpY=1.4;
+  kpis.forEach((k,i)=>{ const x=kpX0+i*(kpW+kpGap);
+    s.addShape(p.ShapeType.roundRect,{x,y:kpY,w:kpW,h:1.0,fill:{color:'FFFFFF'},line:{color:LINEA,width:1},rectRadius:0.06});
+    s.addText(k.l,{x:x+0.18,y:kpY+0.12,w:kpW-0.3,h:0.3,fontFace:'Calibri',fontSize:12,color:GRIS});
+    s.addText([{text:k.v,options:{fontSize:30,bold:true,color:k.c}},{text:k.p?('  '+k.p):'',options:{fontSize:13,color:GRIS}}],{x:x+0.18,y:kpY+0.42,w:kpW-0.3,h:0.5,fontFace:'Calibri'}); });
+  const cols=[{titulo:'Generados',key:'Generado',c:VERDE,bg:VERDEBG},{titulo:'En proceso',key:'En proceso',c:AMBAR,bg:AMBARBG},{titulo:'Pendientes',key:'Pendiente',c:ROJO,bg:ROJOBG}];
+  const colW=4.05,colGap=0.28,colX0=0.5,colY=2.65,colH=4.55;
+  const headH=0.6,rowY0=colY+headH,availBody=colH-headH-0.08;
+  const maxN=Math.max(1,...cols.map(c=>grupos3[c.key].length));
+  let rowH=Math.min(0.74,availBody/maxN); if(rowH<0.2)rowH=0.2;
+  const sc=Math.max(0.6,Math.min(1,rowH/0.74));
+  const f1=Math.max(8,+(13*sc).toFixed(1)),f2=Math.max(8,+(11.5*sc).toFixed(1)),f3=Math.max(7,+(9.5*sc).toFixed(1));
+  const mode=rowH>=0.62?3:rowH>=0.40?2:1;
+  cols.forEach((col,i)=>{ const x=colX0+i*(colW+colGap);
+    s.addShape(p.ShapeType.roundRect,{x,y:colY,w:colW,h:colH,fill:{color:'FFFFFF'},line:{color:LINEA,width:1},rectRadius:0.06});
+    s.addShape(p.ShapeType.roundRect,{x,y:colY,w:colW,h:0.5,fill:{color:col.bg},line:{color:col.bg,width:1},rectRadius:0.06});
+    s.addShape(p.ShapeType.rect,{x,y:colY+0.25,w:colW,h:0.25,fill:{color:col.bg},line:{color:col.bg,width:0}});
+    s.addShape(p.ShapeType.roundRect,{x:x+0.18,y:colY+0.17,w:0.16,h:0.16,fill:{color:col.c},line:{color:col.c,width:0},rectRadius:0.03});
+    s.addText(col.titulo,{x:x+0.42,y:colY+0.06,w:colW-1.2,h:0.38,fontFace:'Calibri',fontSize:15,bold:true,color:col.c});
+    s.addText(String(grupos3[col.key].length),{x:x+colW-0.85,y:colY+0.06,w:0.65,h:0.38,align:'right',fontFace:'Calibri',fontSize:14,bold:true,color:col.c});
+    grupos3[col.key].forEach((it,j)=>{ const ry=rowY0+j*rowH;
+      if(mode===1){ s.addText([{text:it.nAdf+'  ',options:{fontSize:f1,bold:true,color:TINTA}},{text:it.area+' · ',options:{fontSize:f2,bold:true,color:col.c}},{text:cut(it.equipo,38),options:{fontSize:f2,color:TINTA}}],{x:x+0.18,y:ry,w:colW-0.36,h:rowH-0.02,fontFace:'Calibri',valign:'middle'}); }
+      else { s.addText([{text:it.nAdf+'  ',options:{fontSize:f1,bold:true,color:TINTA}},{text:it.area,options:{fontSize:f2,bold:true,color:col.c}}],{x:x+0.18,y:ry,w:colW-0.36,h:rowH*0.40,fontFace:'Calibri',valign:'top'});
+        s.addText(cut(it.equipo,46),{x:x+0.18,y:ry+rowH*0.34,w:colW-0.36,h:rowH*0.30,fontFace:'Calibri',fontSize:f2,color:TINTA,valign:'top'});
+        if(mode===3) s.addText('Avería: '+(it.fecha||'s/f'),{x:x+0.18,y:ry+rowH*0.64,w:colW-0.36,h:rowH*0.30,fontFace:'Calibri',fontSize:f3,color:GRIS,valign:'top'}); }
+      if(j<grupos3[col.key].length-1) s.addShape(p.ShapeType.line,{x:x+0.18,y:ry+rowH-0.02,w:colW-0.36,h:0,line:{color:LINEA,width:0.5}});
+    }); });
+  s.addText('Fuente: Portal ADF (Firestore)',{x:0.5,y:7.25,w:8,h:0.25,fontFace:'Calibri',fontSize:10,color:GRIS});
+  s.addText(total+' ADF en total',{x:9.5,y:7.25,w:3.3,h:0.25,align:'right',fontFace:'Calibri',fontSize:10,color:GRIS});
+
+  // ---- LÁMINA 2 ----
+  const PLANES=[]; grupos.forEach(g=>g.planes.forEach(pl=>PLANES.push(pl)));
+  const short=t=>(t&&t.length>115)?t.slice(0,114).trim()+'…':(t||'');
+  const s2=p.addSlide(); s2.background={color:'FFFFFF'};
+  s2.addShape(p.ShapeType.rect,{x:0,y:0,w:13.333,h:1.15,fill:{color:AZUL}});
+  s2.addText('Seguimiento de Planes de Acción',{x:0.5,y:0.12,w:9,h:0.55,fontFace:'Calibri',fontSize:30,bold:true,color:'FFFFFF'});
+  s2.addText('Planes atrasados y en proceso · Mantenimiento Planeado Sopraval',{x:0.5,y:0.66,w:9,h:0.35,fontFace:'Calibri',fontSize:13,color:'CADCFC'});
+  s2.addText('● Datos del portal',{x:9.5,y:0.18,w:3.3,h:0.35,align:'right',fontFace:'Calibri',fontSize:13,bold:true,color:'FFFFFF'});
+  s2.addText('Actualizado: '+hoy,{x:9.5,y:0.55,w:3.3,h:0.35,align:'right',fontFace:'Calibri',fontSize:12,color:'CADCFC'});
+  const nAtras=PLANES.filter(p=>p.atrasado).length, nEnProc=PLANES.length-nAtras;
+  const kp2=[{l:'ADF con planes',v:String(grupos.length),c:AZUL},{l:'Planes abiertos',v:String(PLANES.length),c:AZUL},{l:'Atrasados',v:String(nAtras),c:ATR_C},{l:'En proceso',v:String(nEnProc),c:AMBAR}];
+  kp2.forEach((k,i)=>{ const x=kpX0+i*(kpW+kpGap);
+    s2.addShape(p.ShapeType.roundRect,{x,y:kpY,w:kpW,h:1.0,fill:{color:'FFFFFF'},line:{color:LINEA,width:1},rectRadius:0.06});
+    s2.addText(k.l,{x:x+0.18,y:kpY+0.12,w:kpW-0.3,h:0.3,fontFace:'Calibri',fontSize:12,color:GRIS});
+    s2.addText(k.v,{x:x+0.18,y:kpY+0.42,w:kpW-0.3,h:0.5,fontFace:'Calibri',fontSize:30,bold:true,color:k.c}); });
+  const colW2=[1.5,6.6,2.2,2.0],tblY=2.6,tblBottom=6.92,availT=tblBottom-tblY;
+  const nRows=grupos.length+PLANES.length+1, rowHt=Math.min(0.40,availT/Math.max(1,nRows));
+  const tsc=Math.max(0.5,Math.min(1,rowHt/0.40)),fc=Math.max(7,Math.round(11*tsc)),fh=Math.max(8,Math.round(12*tsc));
+  const tabla=[]; tabla.push(['Estado','Plan de acción','Responsable','Compromiso'].map((h,i)=>({text:h,options:{bold:true,color:'FFFFFF',fill:{color:AZUL},fontSize:fh,align:i===0||i===3?'center':'left'}})));
+  grupos.forEach(g=>{
+    tabla.push([{text:`${g.adf}   ·   ${g.area}   ·   ${g.equipo}   ·   Inicio ${g.fInicio}   ·   (${g.planes.length} ${g.planes.length===1?'plan':'planes'})`,options:{colspan:4,bold:true,color:AZUL,fill:{color:'E9EEF7'},fontSize:fh,align:'left'}}]);
+    g.planes.forEach(pl=>{ const c=pl.atrasado?ATR_C:AMBAR,bg=pl.atrasado?ATR_BG:AMBARBG;
+      tabla.push([{text:pl.atrasado?'Atrasado':'En proceso',options:{color:c,fill:{color:bg},bold:true,fontSize:fc,align:'center'}},{text:short(pl.plan),options:{color:TINTA,fontSize:fc}},{text:pl.responsable,options:{color:TINTA,fontSize:fc}},{text:pl.fCompr+(pl.atrasado?'  ▲':''),options:{color:pl.atrasado?ATR_C:TINTA,bold:pl.atrasado,fontSize:fc,align:'center'}}]); });
+  });
+  s2.addTable(tabla,{x:0.5,y:tblY,w:12.3,colW:colW2,border:{type:'solid',color:LINEA,pt:0.5},align:'left',valign:'middle',fontFace:'Calibri',rowH:rowHt,autoPage:false});
+  s2.addText('Datos del Portal ADF · Agrupado por ADF.  Atrasado = compromiso vencido (▲).',{x:0.5,y:6.98,w:12.3,h:0.22,fontFace:'Calibri',fontSize:9.5,italic:true,color:GRIS});
+  s2.addText('Fuente: Portal ADF (Firestore)',{x:0.5,y:7.25,w:9,h:0.25,fontFace:'Calibri',fontSize:10,color:GRIS});
+  s2.addText(PLANES.length+' planes (atrasados + en proceso)',{x:9.0,y:7.25,w:3.8,h:0.25,align:'right',fontFace:'Calibri',fontSize:10,color:GRIS});
+
+  p.writeFile({ fileName:'Status-ADF-Lamina-PM.pptx' }).then(()=>toast('PPTX descargado.','ok')).catch(e=>toast('Error al generar PPTX: '+e.message,'err'));
 }
 
 function tiemposTabla(rows){

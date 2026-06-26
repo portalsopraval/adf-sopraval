@@ -1,0 +1,8 @@
+{
+  "projects": { "default": "portal-necesidades-la-calera" },
+  "targets": {
+    "portal-necesidades-la-calera": {
+      "hosting": { "adf": ["adf-sopraval"] }
+    }
+  }
+}

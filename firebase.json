@@ -1,0 +1,7 @@
+{
+  "hosting": {
+    "target": "adf",
+    "public": ".",
+    "ignore": ["firebase.json", ".firebaserc", "**/.*", "**/node_modules/**", "*.md", "*.docx"]
+  }
+}

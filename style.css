@@ -520,3 +520,70 @@ table.data code { font-family: monospace; font-size: .82rem; color: var(--blue);
 .chart-wide { grid-column: 1 / -1; }
 .chart-wide .chart-box { height: 300px; }
 .field .req { color: var(--red); font-weight: 700; }
+
+/* ════════════ LÁMINA PM (réplica de diapositivas + export PPTX) ════════════ */
+.lam-toolbar {
+  display:flex; flex-wrap:wrap; gap:14px; justify-content:space-between; align-items:center;
+  background:var(--white); border:1px solid var(--border); border-radius:var(--radius);
+  padding:14px 16px; margin-bottom:18px;
+}
+.lam-actions { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+.lam-upd { font-size:.8rem; color:var(--gray); }
+.lam-upd b { color:var(--blue); }
+
+.lam-slide {
+  background:var(--white); border:1px solid var(--border); border-radius:var(--radius);
+  box-shadow:var(--shadow-sm); margin-bottom:22px; overflow:hidden;
+  aspect-ratio:16/9; display:flex; flex-direction:column;
+}
+.lam-band {
+  background:#1B3580; color:#fff; padding:14px 22px;
+  display:flex; justify-content:space-between; align-items:flex-start;
+}
+.lam-band-t { font-size:1.5rem; font-weight:800; line-height:1.1; }
+.lam-band-s { font-size:.82rem; color:#CADCFC; margin-top:3px; }
+.lam-band-r { text-align:right; font-size:.8rem; font-weight:700; }
+.lam-band-r span { font-weight:400; color:#CADCFC; font-size:.74rem; }
+
+.lam-kpis { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; padding:16px 22px 6px; }
+.lam-kpi { border:1px solid var(--border); border-radius:8px; padding:10px 14px; }
+.lam-kpi-l { font-size:.78rem; color:var(--gray); }
+.lam-kpi-v { font-size:1.9rem; font-weight:800; line-height:1.15; }
+.lam-kpi-v small { font-size:.8rem; font-weight:600; color:var(--gray); }
+.c-azul{color:#1B3580;} .c-verde{color:#0F6E56;} .c-ambar{color:#854F0B;} .c-rojo{color:#A32D2D;} .c-rojooscuro{color:#7A1414;}
+
+.lam-cols { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; padding:8px 22px 16px; flex:1; min-height:0; }
+.lam-col { border:1px solid var(--border); border-radius:8px; display:flex; flex-direction:column; overflow:hidden; }
+.lam-col-head { display:flex; align-items:center; gap:8px; padding:8px 12px; font-weight:800; font-size:.95rem; }
+.lam-col-head .lam-col-n { margin-left:auto; }
+.lam-col-head.lam-gen { background:#E1F5EE; color:#0F6E56; }
+.lam-col-head.lam-enp { background:#FAEEDA; color:#854F0B; }
+.lam-col-head.lam-pen { background:#FCEBEB; color:#A32D2D; }
+.lam-dot { width:11px; height:11px; border-radius:3px; background:currentColor; display:inline-block; }
+.lam-col-body { padding:4px 0; overflow-y:auto; flex:1; }
+.lam-item { padding:6px 12px; border-bottom:1px solid var(--border); }
+.lam-item:last-child { border-bottom:none; }
+.lam-item-top b { color:#1F2330; font-size:.86rem; }
+.lam-area { font-weight:700; font-size:.82rem; }
+.gen-tx,.lam-gen-tx{color:#0F6E56;} .enp-tx,.lam-enp-tx{color:#854F0B;} .pen-tx,.lam-pen-tx{color:#A32D2D;}
+.lam-item-eq { font-size:.82rem; color:#1F2330; }
+.lam-item-f { font-size:.74rem; color:var(--gray); }
+.lam-empty { padding:14px; text-align:center; color:var(--gray); font-size:.82rem; }
+
+.lam-tbl { padding:4px 22px 14px; flex:1; overflow-y:auto; }
+.lam-thead, .lam-prow { display:grid; grid-template-columns:1.4fr 6.2fr 2.2fr 2fr; gap:8px; align-items:center; }
+.lam-thead { background:#1B3580; color:#fff; font-weight:700; font-size:.8rem; padding:7px 10px; border-radius:6px 6px 0 0; }
+.lam-grp { border:1px solid var(--border); border-top:none; }
+.lam-grp:first-of-type { border-top:1px solid var(--border); }
+.lam-grp-head { background:#E9EEF7; color:#1B3580; font-weight:700; font-size:.8rem; padding:6px 10px; }
+.lam-prow { padding:6px 10px; border-top:1px solid var(--border); font-size:.8rem; }
+.lam-est { text-align:center; font-weight:700; border-radius:5px; padding:2px 6px; font-size:.74rem; }
+.lam-atr { background:#F2C9C9; color:#7A1414; }
+.lam-prc { background:#FAEEDA; color:#854F0B; }
+.lam-plan { color:#1F2330; }
+.lam-resp { color:#1F2330; }
+.lam-comp { text-align:center; }
+.lam-atr-tx { color:#7A1414; font-weight:700; }
+
+.lam-foot { font-size:.72rem; color:var(--gray); padding:8px 22px 12px; border-top:1px solid var(--border); }
+@media (max-width:760px){ .lam-kpis,.lam-cols{ grid-template-columns:1fr; } .lam-slide{ aspect-ratio:auto; } }

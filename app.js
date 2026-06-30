@@ -1790,6 +1790,7 @@ async function renderLamina(){
       <div><div class="page-title">📊 Lámina PM</div><div class="page-sub">Estado de ADF + seguimiento de planes · exportable a PowerPoint</div></div>
       <div class="lam-actions">
         <span class="lam-upd">Actualizado: <b>${fechaTxt}</b></span>
+        ${esAdmin()?`<button class="btn-secondary" id="lam-import">📥 Importar export</button>`:''}
         <button class="btn-secondary" id="lam-refresh">🔄 Actualizar</button>
         <button class="btn-primary" id="lam-pptx">⬇ Descargar PPTX</button>
       </div>
@@ -1827,6 +1828,7 @@ async function renderLamina(){
     </div>`;
 
   $('lam-pptx').addEventListener('click', generarLaminaPPTX);
+  if($('lam-import')) $('lam-import').addEventListener('click', abrirImportarPM);
   $('lam-refresh').addEventListener('click', async()=>{
     const now=new Date().toISOString();
     try{ await fdb.collection(COL_CFG).doc('lamina').set({ lastUpdate:now, por:CU.email }, {merge:true}); }catch(e){}
@@ -1919,6 +1921,173 @@ function generarLaminaPPTX(){
   s2.addText(PLANES.length+' planes (atrasados + en proceso)',{x:9.0,y:7.25,w:3.8,h:0.25,align:'right',fontFace:'Calibri',fontSize:10,color:GRIS});
 
   p.writeFile({ fileName:'Status-ADF-Lamina-PM.pptx' }).then(()=>toast('PPTX descargado.','ok')).catch(e=>toast('Error al generar PPTX: '+e.message,'err'));
+}
+
+/* ═══════════════════════════════════════════════════════════
+   IMPORTAR DESDE EXPORTACIÓN DE SHAREPOINT (manual · $0 · sin TI)
+   Sube el export de la lista ADF_Solicitudes (Excel/CSV) + el Excel
+   de planes; previsualiza y siembra en el portal preservando el flujo.
+   Autocontenido: no depende de MSAL ni de ningún servicio externo.
+   ═══════════════════════════════════════════════════════════ */
+const PM_STATUS_LABEL = { Aprobado:'Aprobado (Generado)', EnJefatura:'En jefatura (En proceso)', PorVerificar:'Por verificar (Pendiente)' };
+
+function _pmNorm(s){ return String(s==null?'':s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/\s+/g,' ').trim(); }
+// Toma de una fila-objeto el primer valor cuyo encabezado contenga alguno de los alias
+function _pmPick(obj, alias){
+  const keys=Object.keys(obj);
+  for(const a of alias){ for(const k of keys){ if(_pmNorm(k).indexOf(_pmNorm(a))>=0) return obj[k]; } }
+  return '';
+}
+function _pmFecha(v){ if(typeof ADFImport!=='undefined' && ADFImport._parseFecha){ const f=ADFImport._parseFecha(v); if(f) return f; } return String(v||''); }
+function _pmEstado(st){ const n=_pmNorm(st); if(n.indexOf('gener')>=0||n.indexOf('termin')>=0) return 'Aprobado'; if(n.indexOf('proce')>=0) return 'EnJefatura'; return 'PorVerificar'; }
+
+function _pmMapADF(f){
+  const idNum = _pmPick(f,['id']);
+  return {
+    spId:idNum, folio:'ADF-'+String(idNum).replace(/\D/g,'').padStart(4,'0'),
+    fecha:_pmFecha(_pmPick(f,['fecha averia','fecha_averia','fecha de averia','fecha'])),
+    statusRaw:_pmPick(f,['status','estado'])||'',
+    area:_pmPick(f,['area'])||'', linea:_pmPick(f,['linea'])||'',
+    equipo:_pmPick(f,['equipo','maquina'])||'',
+    minutosPerdidos:_pmPick(f,['minutos','detencion'])||'',
+    sintoma:_pmPick(f,['descripcion','averia'])||'',
+    responsable:_pmPick(f,['responsable'])||'',
+    estado:_pmEstado(_pmPick(f,['status','estado']))
+  };
+}
+function _pmMapPlan(r){
+  const adfNum=_pmPick(r,['n adf','n° adf','nro adf','adf']);
+  return {
+    adf:parseInt(String(adfNum).replace(/\D/g,''),10)||null,
+    plan:_pmPick(r,['planes accion','plan de accion','planes','actividad'])||'',
+    responsable:_pmPick(r,['responsable'])||'',
+    fCompr:_pmFecha(_pmPick(r,['fecha compr','fecha compromiso','compromiso']))
+  };
+}
+
+// Lee Excel/CSV a filas-objeto (clave=encabezado). hojaRe opcional elige hoja por nombre.
+async function _pmLeerFilas(file, hojaRe){
+  const buf=await file.arrayBuffer();
+  const wb=XLSX.read(buf,{type:'array'});
+  let hoja=wb.SheetNames[0];
+  if(hojaRe){ const h=wb.SheetNames.find(n=>hojaRe.test(n)); if(h) hoja=h; }
+  return XLSX.utils.sheet_to_json(wb.Sheets[hoja], { defval:'' });
+}
+
+function abrirImportarPM(){
+  if(!esAdmin()){ toast('Solo administradores.','err'); return; }
+  $('modal-title').textContent='📥 Importar desde exportación de SharePoint';
+  $('modal-body').innerHTML=`
+    <div class="sp-pre">
+      <p>Subí los dos archivos exportados de SharePoint. El portal los previsualiza antes de sembrar.</p>
+      <ol>
+        <li><b>Lista ADF</b> (Excel/CSV): lista <code>ADF_Solicitudes</code> → <i>Exportar a Excel/CSV</i>. <span class="muted">La vista debe incluir la columna <b>ID</b> (enlaza los planes con cada ADF).</span></li>
+        <li><b>Excel de planes</b>: <code>Seguimiento Planes Acción ADF.xlsx</code> (hoja <code>P. ACCION VERT</code>) — opcional.</li>
+      </ol>
+      <div class="field"><label>1 · Lista ADF (export)</label><input type="file" id="pm-file-adf" accept=".xlsx,.xls,.csv"></div>
+      <div class="field"><label>2 · Excel de planes (opcional)</label><input type="file" id="pm-file-planes" accept=".xlsx,.xls"></div>
+      <div class="sp-actions">
+        <button class="btn-secondary" id="pm-cancel">Cancelar</button>
+        <button class="btn-primary" id="pm-procesar">Procesar y previsualizar</button>
+      </div>
+    </div>`;
+  $('modal-detalle').classList.add('open');
+  $('pm-cancel').addEventListener('click', cerrarModal);
+  $('pm-procesar').addEventListener('click', procesarImportPM);
+}
+
+async function procesarImportPM(){
+  const fAdf=$('pm-file-adf').files[0], fPlanes=$('pm-file-planes').files[0];
+  if(!fAdf){ toast('Falta el archivo de la lista ADF.','err'); return; }
+  toast('Leyendo archivos…','info');
+  try{
+    const filasADF=await _pmLeerFilas(fAdf);
+    const registros=filasADF.map(_pmMapADF).filter(r=>r.equipo||r.sintoma);
+    let planes=[];
+    if(fPlanes){ const fp=await _pmLeerFilas(fPlanes,/p\.?\s*accion|accion vert|planes/i); planes=fp.map(_pmMapPlan).filter(p=>p&&p.adf&&p.plan); }
+    if(!registros.length){ toast('No reconocí filas de ADF (revisa que el export tenga encabezados y la columna ID).','err'); return; }
+    const data={ registros, planes, meta:{
+      nADF:registros.length, nPlanes:planes.length,
+      generados:registros.filter(r=>r.estado==='Aprobado').length,
+      enProceso:registros.filter(r=>r.estado==='EnJefatura').length,
+      pendientes:registros.filter(r=>r.estado==='PorVerificar').length }};
+    mostrarPreviewPM(data);
+  }catch(e){ toast('Error al leer: '+e.message,'err'); }
+}
+
+function mostrarPreviewPM(data){
+  const m=data.meta;
+  const muestra=data.registros.slice(0,8).map(r=>`<tr><td>${esc(r.folio)}</td><td>${esc(normArea(r.area))}</td><td>${esc((r.equipo||'').slice(0,40))}</td><td>${esc(r.statusRaw)}</td><td>${esc(PM_STATUS_LABEL[r.estado]||r.estado)}</td></tr>`).join('');
+  window._pmData=data;
+  $('modal-title').textContent='👁 Previsualización — Exportación SharePoint';
+  $('modal-body').innerHTML=`
+    <div class="sp-pre">
+      <div class="sp-kpis">
+        <span><b>${m.nADF}</b> ADF</span>
+        <span class="c-verde"><b>${m.generados}</b> Generados</span>
+        <span class="c-ambar"><b>${m.enProceso}</b> En proceso</span>
+        <span class="c-rojo"><b>${m.pendientes}</b> Pendientes</span>
+        <span><b>${m.nPlanes}</b> planes</span>
+      </div>
+      <table class="data sp-tbl"><thead><tr><th>Folio</th><th>Área</th><th>Equipo</th><th>Status</th><th>→ Estado portal</th></tr></thead>
+        <tbody>${muestra}</tbody></table>
+      <p class="muted">Muestra de ${Math.min(8,m.nADF)} de ${m.nADF}. Al sembrar se actualiza cabecera + planes y se <b>preserva el flujo</b> (verificación/jefatura) de los ADF que ya existan.</p>
+      <div class="sp-actions">
+        <button class="btn-secondary" id="pm-cancel2">Cancelar</button>
+        <button class="btn-primary" id="pm-sembrar">Sembrar ${m.nADF} ADF + ${m.nPlanes} planes</button>
+      </div>
+    </div>`;
+  $('modal-detalle').classList.add('open');
+  $('pm-cancel2').addEventListener('click', cerrarModal);
+  $('pm-sembrar').addEventListener('click', ()=>sembrarPM(window._pmData));
+}
+
+async function sembrarPM(data){
+  if(!data){ toast('No hay datos para sembrar.','err'); return; }
+  const btn=$('pm-sembrar'); if(btn) btn.disabled=true; toast('Sembrando…','info');
+  const planesPorAdf={};
+  (data.planes||[]).forEach(p=>{ if(p.adf){ (planesPorAdf[p.adf]=planesPorAdf[p.adf]||[]).push(p); } });
+  const nowISO=new Date().toISOString();
+  let nuevos=0, actualizados=0;
+  try{
+    for(const r of data.registros){
+      const num=parseInt(String(r.spId).replace(/\D/g,''),10);
+      const planes=(planesPorAdf[num]||[]).map(p=>({ actividad:p.plan, tipo:'PERMANENTE', responsable:p.responsable||'', fecha:p.fCompr||'' }));
+      let areaR=r.area||'', lineaR=r.linea||'', sapR='';
+      const mq=inferirMaquina(r.equipo); if(mq){ areaR=mq.area||areaR; lineaR=mq.linea||lineaR; sapR=mq.sap||''; }
+      areaR=normArea(areaR);
+      const ref=fdb.collection(COL_ADF).doc(r.folio);
+      const snap=await ref.get();
+      const cabecera={ folio:r.folio, area:areaR, linea:lineaR, equipo:r.equipo||'', codSap:sapR,
+        sintoma:r.sintoma||'', fecha:r.fecha||'', fechaInicio:r.fecha||'', minutosPerdidos:r.minutosPerdidos||'',
+        origen:'SharePoint (import)', spId:r.spId, updatedAt:nowISO };
+      if(snap.exists){
+        const prev=snap.data();
+        const prevPlanes=(prev.analisis&&prev.analisis.planes)||[];
+        const prevSeg=prev.seguimiento||[];
+        const planesMerge=prevPlanes.slice(), segMerge=prevSeg.slice();
+        planes.forEach(np=>{ if(!planesMerge.some(pp=>norm(pp.actividad)===norm(np.actividad))){ planesMerge.push(np); segMerge.push({actividad:np.actividad,fechaSolucion:'',realizado:'',hecho:false,imagen:'',comentario:''}); } });
+        await ref.set({ ...cabecera, analisis:{ ...(prev.analisis||{}), planes:planesMerge }, seguimiento:segMerge }, {merge:true});
+        actualizados++;
+      }else{
+        await ref.set({
+          id:r.folio, ...cabecera, horaInicio:'', fechaMarcha:'', horaMarcha:'', ot:'',
+          componente:'', modoFalla:'', accionCorrectiva:'', tipoProblema:'', afectoProduccion:'No', imagen:'',
+          condiciones:{ estado:'', estadoOtro:'', turno:'', pmVencido:'No', intervencion:'No', intervencionDet:'', fueraParam:'No', fueraParamDet:'' },
+          analisis:{ modoDetectado:'', tipoEquipo:[], modosMixtos:[], causas:[], porques:[], planes },
+          seguimiento:planes.map(p=>({actividad:p.actividad,fechaSolucion:'',realizado:'',hecho:false,imagen:'',comentario:''})),
+          estado:r.estado, creadorId:'sharepoint', creadorEmail:'sharepoint', creadorNombre:r.responsable||'SharePoint',
+          verifMetodologia:null, jefaturaAsignada:null, verifJefatura:null, observaciones:[],
+          evidencias:'', cerradoPor:'', cerradoAt:'', createdAt:r.fecha?(r.fecha+'T08:00:00.000Z'):nowISO,
+          historial:[{ accion:'Importado desde export SharePoint (Status: '+r.statusRaw+')', usuario:CU.name, fecha:nowISO }],
+        });
+        nuevos++;
+      }
+    }
+    cerrarModal();
+    toast(`✅ Importado: ${nuevos} nuevos · ${actualizados} actualizados.`,'ok');
+    renderLamina();
+  }catch(e){ toast('Error al sembrar: '+e.message,'err'); if($('pm-sembrar')) $('pm-sembrar').disabled=false; }
 }
 
 function tiemposTabla(rows){

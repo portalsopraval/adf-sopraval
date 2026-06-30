@@ -587,3 +587,12 @@ table.data code { font-family: monospace; font-size: .82rem; color: var(--blue);
 
 .lam-foot { font-size:.72rem; color:var(--gray); padding:8px 22px 12px; border-top:1px solid var(--border); }
 @media (max-width:760px){ .lam-kpis,.lam-cols{ grid-template-columns:1fr; } .lam-slide{ aspect-ratio:auto; } }
+
+/* ── Importar export SharePoint (modal) ── */
+.sp-pre ol { margin:8px 0 8px 18px; line-height:1.7; }
+.sp-pre code { background:var(--blue-lt); color:var(--blue); padding:1px 5px; border-radius:4px; font-size:.82rem; }
+.sp-pre .muted, .muted { color:var(--gray); font-size:.82rem; }
+.sp-kpis { display:flex; flex-wrap:wrap; gap:16px; margin:4px 0 12px; font-size:.95rem; }
+.sp-kpis b { font-size:1.15rem; }
+.sp-tbl { width:100%; font-size:.82rem; margin-bottom:8px; }
+.sp-actions { display:flex; justify-content:flex-end; gap:10px; margin-top:14px; }

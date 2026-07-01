@@ -1700,10 +1700,12 @@ async function comprimirImg(file){
    ═══════════════════════════════════════════════════════════ */
 function renderSeguimiento(){
   if(!_cache.cargado){ $('pane-seguimiento').innerHTML=skeletonHTML(); return; }
-  const data=misADFs().filter(a=>['PlanAccion','Seguimiento'].includes(a.estado));
+  // Todos los ADF no cerrados que tienen planes de acción
+  const data=misADFs().filter(a=> a.estado!=='Cerrado' && ((a.analisis&&a.analisis.planes)||[]).length);
+  const nPlanes=data.reduce((s,a)=>s+((a.analisis&&a.analisis.planes)||[]).length,0);
   $('pane-seguimiento').innerHTML = `
     <div class="page-title">📌 Seguimiento de Soluciones</div>
-    <div class="page-sub">ADF con planes de acción en curso (${data.length})</div>
+    <div class="page-sub">${data.length} ADF abiertos con ${nPlanes} plan(es) de acción</div>
     ${data.length? tablaADF(data) : `<div class="empty"><div class="e-icon">✅</div>No hay planes de acción pendientes.</div>`}
   `;
 }

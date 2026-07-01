@@ -911,7 +911,7 @@ function renderTabs(){
     return;
   }
   if(esJefatura()){
-    const tabs = [['inicio','🏠 Inicio'],['listado','📋 ADF a validar'],['tiempos','⏱ Control de Tiempos'],['lamina','📊 Lámina PM'],['confiabilidad','📊 Indicadores']];
+    const tabs = [['inicio','🏠 Inicio'],['listado','📋 ADF a validar'],['tiempos','⏱ Control de Tiempos'],['lamina','📊 Lámina PM']];
     $('tabs-nav').innerHTML = tabs.map(([k,l])=>`<button class="tab-btn" data-tab="${k}">${l}</button>`).join('');
     $('tabs-nav').querySelectorAll('.tab-btn').forEach(b=> b.addEventListener('click', ()=>irTab(b.dataset.tab)));
     return;

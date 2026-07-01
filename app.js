@@ -26,7 +26,7 @@ const COL_PLANES = 'adf_planes_mp';
 
 // ── Estado global ──
 let CU = null;                       // usuario actual
-const _cache = { users: [], adfs: [], planes: [] };
+const _cache = { users: [], adfs: [], planes: [], cargado:false };
 let _activeTab = 'inicio';
 let _wizard = null;                  // borrador en construcción
 let _openId = null;                  // ADF abierto en modal
@@ -931,7 +931,7 @@ function renderTabs(){
 function irTab(tab){
   if(tab==='confiabilidad' && !esAdmin() && !esVistaPMInd() && !esJefatura()) tab='inicio';
   if(esVistaPMInd() && !['confiabilidad','mantenimiento','lamina'].includes(tab)) tab='mantenimiento';
-  if(esJefatura() && !['inicio','listado','tiempos','confiabilidad','lamina'].includes(tab)) tab='listado';
+  if(esJefatura() && !['inicio','listado','seguimiento','tiempos','lamina'].includes(tab)) tab='listado';
   _activeTab=tab;
   $('tabs-nav').querySelectorAll('.tab-btn').forEach(b=>
     b.classList.toggle('active', b.dataset.tab===tab));
@@ -954,6 +954,7 @@ function escucharADFs(){
   fdb.collection(COL_ADF).onSnapshot(snap=>{
     _cache.adfs = snap.docs.map(d=>({ id:d.id, ...d.data() }))
       .sort((a,b)=> (b.createdAt||'').localeCompare(a.createdAt||''));
+    _cache.cargado = true;
     if(['inicio','listado','seguimiento','tiempos','confiabilidad'].includes(_activeTab)) irTab(_activeTab);
     actualizarBadges();
   });
@@ -976,7 +977,17 @@ function misADFs(){
 /* ═══════════════════════════════════════════════════════════
    INICIO / DASHBOARD
    ═══════════════════════════════════════════════════════════ */
+// Skeleton loader mientras llega la primera carga de Firestore
+function skeletonHTML(){
+  return `<div class="skel-wrap">
+    <div class="skel skel-title"></div>
+    <div class="skel-kpis">${'<div class="skel skel-kpi"></div>'.repeat(5)}</div>
+    ${'<div class="skel skel-row"></div>'.repeat(6)}
+  </div>`;
+}
+
 function renderInicio(){
+  if(!_cache.cargado){ $('pane-inicio').innerHTML=skeletonHTML(); return; }
   const data = misADFs();
   const c = est => data.filter(a=>a.estado===est).length;
   const abiertos = data.filter(a=>!['Cerrado'].includes(a.estado)).length;
@@ -988,12 +999,12 @@ function renderInicio(){
     <div class="page-sub">Panel de Análisis de Falla · ${esLider()?'Vista global':(esJefatura()?'Validación de jefatura':'Tus análisis')}</div>
     ${p.n>0?`<div class="alerta-pend" onclick="irTab('listado')">🔔 Tienes <b>${p.texto}</b> · <span class="ap-link">ver →</span></div>`:''}
     <div class="kpi-grid">
-      <div class="kpi accent"><div class="k-val">${data.length}</div><div class="k-lbl">ADF totales</div></div>
-      <div class="kpi"><div class="k-val">${c('PorVerificar')+c('PlanAccion')}</div><div class="k-lbl">Por verificar</div></div>
-      <div class="kpi"><div class="k-val">${c('EnJefatura')}</div><div class="k-lbl">En jefatura</div></div>
-      <div class="kpi"><div class="k-val" style="color:var(--red)">${c('Observado')}</div><div class="k-lbl">Observados</div></div>
-      <div class="kpi"><div class="k-val">${c('Aprobado')+c('Seguimiento')}</div><div class="k-lbl">En seguimiento</div></div>
-      <div class="kpi"><div class="k-val">${c('Cerrado')}</div><div class="k-lbl">Cerrados</div></div>
+      <div class="kpi accent kpi-click" onclick="kpiIr('')"><div class="k-val">${data.length}</div><div class="k-lbl">ADF totales</div></div>
+      <div class="kpi kpi-click" onclick="kpiIr('PorVerificar,PlanAccion')"><div class="k-val">${c('PorVerificar')+c('PlanAccion')}</div><div class="k-lbl">Por verificar</div></div>
+      <div class="kpi kpi-click" onclick="kpiIr('EnJefatura')"><div class="k-val">${c('EnJefatura')}</div><div class="k-lbl">En jefatura</div></div>
+      <div class="kpi kpi-click" onclick="kpiIr('Observado')"><div class="k-val" style="color:var(--red)">${c('Observado')}</div><div class="k-lbl">Observados</div></div>
+      <div class="kpi kpi-click" onclick="kpiIr('Aprobado,Seguimiento')"><div class="k-val">${c('Aprobado')+c('Seguimiento')}</div><div class="k-lbl">En seguimiento</div></div>
+      <div class="kpi kpi-click" onclick="kpiIr('Cerrado')"><div class="k-val">${c('Cerrado')}</div><div class="k-lbl">Cerrados</div></div>
     </div>
     ${esAdmin()?miniIndicadoresMes():''}
     ${puedeCrear?`<div class="card">
@@ -1030,18 +1041,42 @@ function miniIndicadoresMes(){
 /* ═══════════════════════════════════════════════════════════
    LISTADO
    ═══════════════════════════════════════════════════════════ */
-function renderListado(){
+let _fEstado='', _fTexto='';
+const FILTRO_CHIPS=[['','Todos'],['PorVerificar,PlanAccion','Por verificar'],['EnJefatura','En jefatura'],['Observado','Observados'],['Aprobado,Seguimiento','En seguimiento'],['Cerrado','Cerrados']];
+
+function kpiIr(v){ _fEstado=v; _fTexto=''; irTab('listado'); }
+
+function chipsEstadoHTML(){
+  return FILTRO_CHIPS.map(([v,l])=>`<button class="chip ${_fEstado===v?'chip-on':''}" onclick="setFiltroEstado('${v}')">${l}</button>`).join('');
+}
+function setFiltroEstado(v){ _fEstado=v; const c=$('lst-chips'); if(c) c.innerHTML=chipsEstadoHTML(); refrescarListado(); }
+
+function datosListado(){
   let data=misADFs();
-  let titulo = esLider()?'Todos los ADF':'Mis ADF';
   if(esJefatura()){
     const orden={EnJefatura:0,Observado:1,Aprobado:2,Seguimiento:3,Cerrado:4};
-    data = _cache.adfs.filter(a=> a.jefaturaAsignada && a.jefaturaAsignada.email===CU.email)
-      .sort((a,b)=> (orden[a.estado]??9)-(orden[b.estado]??9));
-    titulo = 'ADF asignados para validar';
+    data = [...data].sort((a,b)=> (orden[a.estado]??9)-(orden[b.estado]??9));
   }
+  if(_fEstado){ const set=_fEstado.split(','); data=data.filter(a=>set.includes(a.estado)); }
+  const q=_fTexto.trim().toLowerCase();
+  if(q) data=data.filter(a=> [a.folio,a.equipo,a.area,a.linea,a.sintoma,a.creadorNombre].some(x=>(x||'').toLowerCase().includes(q)));
+  return data;
+}
+
+function refrescarListado(){
+  const t=$('lst-tabla'); if(!t) return;
+  const data=datosListado();
+  t.innerHTML = tablaADF(data);
+  const n=$('lst-count'); if(n) n.textContent=data.length;
+}
+
+function renderListado(){
+  if(!_cache.cargado){ $('pane-listado').innerHTML=skeletonHTML(); return; }
+  const titulo = esJefatura()?'ADF asignados para validar':(esLider()?'Todos los ADF':'Mis ADF');
+  const data=datosListado();
   $('pane-listado').innerHTML = `
     <div class="page-title">${titulo}</div>
-    <div class="page-sub">${data.length} registro(s)${esJefatura()?` · ${data.filter(a=>a.estado==='EnJefatura').length} por validar`:' de análisis de falla'}</div>
+    <div class="page-sub"><span id="lst-count">${data.length}</span> registro(s)${esJefatura()?` · ${misADFs().filter(a=>a.estado==='EnJefatura').length} por validar`:' de análisis de falla'}</div>
     ${esAdmin()?`<div class="imp-bar">
       <button class="btn-ghost btn-sm" onclick="descargarPlantillaADF()">⬇ Plantilla Excel</button>
       <label class="btn-primary btn-sm imp-file">📥 Importar ADF terminados
@@ -1049,12 +1084,17 @@ function renderListado(){
       </label>
       <button class="btn-ghost btn-sm" onclick="normalizarAreasGuardadas()">🧹 Corregir áreas (catálogo)</button>
     </div>`:''}
-    ${tablaADF(data)}
+    <div class="list-tools">
+      <input type="search" id="lst-buscar" class="lst-buscar" placeholder="🔍 Buscar folio, equipo, área, síntoma…" value="${esc(_fTexto)}">
+      <div class="chip-row" id="lst-chips">${chipsEstadoHTML()}</div>
+    </div>
+    <div id="lst-tabla">${tablaADF(data)}</div>
   `;
+  $('lst-buscar').addEventListener('input', e=>{ _fTexto=e.target.value; refrescarListado(); });
 }
 
 function tablaADF(list){
-  if(!list.length) return `<div class="empty"><div class="e-icon">📭</div>No hay ADF registrados aún.</div>`;
+  if(!list.length) return `<div class="empty"><div class="e-icon">📭</div>${(_fEstado||_fTexto)?'Sin resultados con los filtros aplicados.':'No hay ADF registrados aún.'}</div>`;
   return `<div class="tbl-wrap"><table class="data">
     <thead><tr><th>Folio</th><th>Fecha</th><th>Área</th><th>Equipo</th><th>Síntoma</th><th>Tipo</th><th>Estado</th><th>Plazo</th><th></th></tr></thead>
     <tbody>${list.map(a=>`
@@ -1659,6 +1699,7 @@ async function comprimirImg(file){
    SEGUIMIENTO
    ═══════════════════════════════════════════════════════════ */
 function renderSeguimiento(){
+  if(!_cache.cargado){ $('pane-seguimiento').innerHTML=skeletonHTML(); return; }
   const data=misADFs().filter(a=>['PlanAccion','Seguimiento'].includes(a.estado));
   $('pane-seguimiento').innerHTML = `
     <div class="page-title">📌 Seguimiento de Soluciones</div>
@@ -1671,6 +1712,7 @@ function renderSeguimiento(){
    CONTROL DE TIEMPOS (semáforo por plan de acción)
    ═══════════════════════════════════════════════════════════ */
 function renderTiempos(){
+  if(!_cache.cargado){ $('pane-tiempos').innerHTML=skeletonHTML(); return; }
   const today = new Date(); today.setHours(0,0,0,0);
   const activos = misADFs().filter(a=>['Aprobado','Seguimiento','PlanAccion'].includes(a.estado));
 
@@ -2917,6 +2959,32 @@ $('modal-close').addEventListener('click', cerrarModal);
 $('modal-detalle').addEventListener('click', e=>{ if(e.target.id==='modal-detalle') cerrarModal(); });
 function cerrarModal(){ $('modal-detalle').classList.remove('open'); _openId=null; _openPlanId=null; }
 
+// Línea de tiempo del flujo de validación (stepper visual)
+function timelineHTML(a){
+  const obsMet = a.estado==='Observado';
+  const pasos=[
+    { lbl:'Creado', done:true, fecha:a.createdAt, por:a.creadorNombre },
+    { lbl: obsMet?'Observado ↩':'Verif. metodológica',
+      done: !!a.verifMetodologia && !obsMet, obs: obsMet,
+      cur: ['PorVerificar','PlanAccion'].includes(a.estado),
+      fecha: a.verifMetodologia?.fecha, por: a.verifMetodologia?.por },
+    { lbl:'Validación jefatura', done: !!a.verifJefatura, cur: a.estado==='EnJefatura',
+      fecha: a.verifJefatura?.fecha, por: a.verifJefatura?.por || (a.estado==='EnJefatura'?a.jefaturaAsignada?.name:'') },
+    { lbl:'Seguimiento planes', done: a.estado==='Cerrado', cur: ['Aprobado','Seguimiento'].includes(a.estado) },
+    { lbl:'Cerrado', done: a.estado==='Cerrado', fecha:a.cerradoAt, por:a.cerradoPor },
+  ];
+  const hist=(a.historial||[]);
+  return `<div class="tl-wrap">${pasos.map((p,i)=>`
+    <div class="tl-step ${p.done?'tl-done':p.obs?'tl-obs':p.cur?'tl-cur':''}">
+      <div class="tl-dot">${p.done?'✓':(p.obs?'!':i+1)}</div>
+      <div class="tl-info"><b>${p.lbl}</b><small>${p.fecha?fmtDT(p.fecha):(p.cur?'En curso':(p.obs?'Requiere corrección':'Pendiente'))}${p.por?'<br>'+esc(p.por):''}</small></div>
+    </div>${i<pasos.length-1?`<div class="tl-line ${p.done?'tl-line-done':''}"></div>`:''}`).join('')}
+  </div>
+  ${hist.length?`<details class="tl-hist"><summary>📜 Historial completo (${hist.length})</summary>
+    ${hist.slice().reverse().map(h=>`<div class="tl-hist-item"><span class="tl-hist-fecha">${fmtDT(h.fecha)}</span>${esc(h.accion)} — <i>${esc(h.usuario)}</i></div>`).join('')}
+  </details>`:''}`;
+}
+
 function abrirADF(id){
   const a=_cache.adfs.find(x=>x.id===id); if(!a) return;
   _openId=id;
@@ -2928,6 +2996,7 @@ function abrirADF(id){
       ${a.tipoProblema==='Recurrente'?'<span class="badge b-recurrente">Recurrente</span>':'<span class="badge b-esporadico">Esporádico</span>'}
       <span class="muted" style="margin-left:auto;font-size:.8rem">Creado por ${esc(a.creadorNombre||'—')} · ${fmtDT(a.createdAt)}</span>
     </div>
+    ${timelineHTML(a)}
 
     <div class="section-head"><h3>1 · Datos generales</h3>${puedeEditarADF(a)?`<button class="btn-ghost btn-sm" onclick="editarCabecera('${a.id}')">✏️ Editar</button>`:''}</div>
     <div class="grid-3">

@@ -47,9 +47,19 @@ const esAdmin = () => CU && ADMINS.includes((CU.email||'').toLowerCase());
 const VISTA_PM_IND = ['fcarroza@sopraval.cl'];
 const esVistaPMInd = () => CU && VISTA_PM_IND.includes((CU.email||'').toLowerCase());
 // Jefaturas de mantenimiento: 2º nivel de verificación (validan planes + info técnica del ADF)
-const JEFATURAS = ['gzapata@sopraval.cl','cmadridp@sopraval.cl','ccrojas@sopraval.cl','cllopez@sopraval.cl'];
+const JEFATURAS = ['gzapata@sopraval.cl','ccrojas@sopraval.cl','cllopez@sopraval.cl'];
 const esJefatura = () => CU && JEFATURAS.includes((CU.email||'').toLowerCase());
-const JEFATURAS_NOMBRES = { 'gzapata@sopraval.cl':'Gonzalo Zapata','cmadridp@sopraval.cl':'Cristobal Madrid','ccrojas@sopraval.cl':'Cristian Rojas','cllopez@sopraval.cl':'Claudio Lopez' };
+const JEFATURAS_NOMBRES = { 'gzapata@sopraval.cl':'Gonzalo Zapata','ccrojas@sopraval.cl':'Cristian Rojas','cllopez@sopraval.cl':'Claudio Lopez' };
+// Mapping supervisor → jefatura asignada automáticamente
+const SUP_JEFATURA = {
+  'lgodoyt@sopraval.cl':     'cllopez@sopraval.cl',   // Claudio Lopez
+  'jvaldenegro@sopraval.cl': 'ccrojas@sopraval.cl',   // Cristian Rojas
+  'ddhernandez@sopraval.cl': 'ccrojas@sopraval.cl',
+  'ppalmah@agrosuper.com':   'ccrojas@sopraval.cl',
+  'gbernal@sopraval.cl':     'gzapata@sopraval.cl',   // Gonzalo Zapata
+  'mparedess@sopraval.cl':   'gzapata@sopraval.cl',
+  'mahumadav@sopraval.cl':   'gzapata@sopraval.cl',
+};
 // ¿El usuario puede editar el contenido del ADF? Admin/líder siempre; el creador solo antes de aprobar (o si está Observado)
 function esCreadorADF(a){ return a && (a.creadorId===CU.id || a.creadorEmail===CU.email); }
 function puedeEditarADF(a){ return esAdmin() || esLider() || (esCreadorADF(a) && ['PorVerificar','Observado','PlanAccion'].includes(a.estado)); }
@@ -799,17 +809,16 @@ function generarAnalisis(adf){
 const SEED_USERS = [
   { email:'jgomezf@sopraval.cl', name:'Jonathan Gómez',  role:'lider',   cargo:'Ingeniero en Confiabilidad' },
   { email:'gvelizm@sopraval.cl', name:'Gino Véliz',      role:'lider',   cargo:'Ingeniero en Mantenimiento' },
-  // Supervisores (crean ADF) — área asociada
-  { email:'gbernal@sopraval.cl',     name:'Gerardo Bernal',       role:'tecnico', cargo:'Supervisor Faena',                    area:'FAENA' },
-  { email:'mparedess@sopraval.cl',   name:'Mauricio Paredes',     role:'tecnico', cargo:'Supervisor Congelado',                area:'CONGELADO' },
-  { email:'mahumadav@sopraval.cl',   name:'Maximiliano Ahumada',  role:'tecnico', cargo:'Supervisor Procesos',                 area:'PROCESOS' },
-  { email:'jvaldenegro@sopraval.cl', name:'Juan Valdenegro',      role:'tecnico', cargo:'Supervisor Suministros',              area:'SUMINISTROS' },
-  { email:'lgodoyt@sopraval.cl',     name:'Leonardo Godoy',       role:'tecnico', cargo:'Supervisor Refrigeración',            area:'REFRIGERACION' },
-  { email:'ppalmah@agrosuper.com',   name:'Patricio Palma',       role:'tecnico', cargo:'Supervisor Riles / Subproductos',     area:'SUBPRODUCTOS' },
-  { email:'ddhernandez@sopraval.cl', name:'Diego Hernández',      role:'tecnico', cargo:'Supervisor Eléctrico / Generación',   area:'GENERACION' },
-  // Jefaturas de mantenimiento (2º nivel de verificación) — su vista se aplica por correo (esJefatura)
+  // Supervisores con jefatura asignada
+  { email:'gbernal@sopraval.cl',     name:'Gerardo Bernal',       role:'tecnico', cargo:'Supervisor Faena',                    area:'FAENA',         jefaturaEmail:'gzapata@sopraval.cl' },
+  { email:'mparedess@sopraval.cl',   name:'Mauricio Paredes',     role:'tecnico', cargo:'Supervisor Congelado',                area:'CONGELADO',     jefaturaEmail:'gzapata@sopraval.cl' },
+  { email:'mahumadav@sopraval.cl',   name:'Maximiliano Ahumada',  role:'tecnico', cargo:'Supervisor Procesos',                 area:'PROCESOS',      jefaturaEmail:'gzapata@sopraval.cl' },
+  { email:'jvaldenegro@sopraval.cl', name:'Juan Valdenegro',      role:'tecnico', cargo:'Supervisor Suministros',              area:'SUMINISTROS',   jefaturaEmail:'ccrojas@sopraval.cl' },
+  { email:'lgodoyt@sopraval.cl',     name:'Leonardo Godoy',       role:'tecnico', cargo:'Supervisor Refrigeración',            area:'REFRIGERACION', jefaturaEmail:'cllopez@sopraval.cl' },
+  { email:'ppalmah@agrosuper.com',   name:'Patricio Palma',       role:'tecnico', cargo:'Supervisor Riles / Subproductos',     area:'SUBPRODUCTOS',  jefaturaEmail:'ccrojas@sopraval.cl' },
+  { email:'ddhernandez@sopraval.cl', name:'Diego Hernández',      role:'tecnico', cargo:'Supervisor Eléctrico / Generación',   area:'GENERACION',    jefaturaEmail:'ccrojas@sopraval.cl' },
+  // Jefaturas de mantenimiento (2º nivel de verificación)
   { email:'gzapata@sopraval.cl',     name:'Gonzalo Zapata',       role:'tecnico', cargo:'Jefatura de Mantenimiento' },
-  { email:'cmadridp@sopraval.cl',    name:'Cristobal Madrid',     role:'tecnico', cargo:'Jefatura de Mantenimiento' },
   { email:'ccrojas@sopraval.cl',     name:'Cristian Rojas',       role:'tecnico', cargo:'Jefatura de Mantenimiento' },
   { email:'cllopez@sopraval.cl',     name:'Claudio Lopez',        role:'tecnico', cargo:'Jefatura de Mantenimiento' },
 ];
@@ -3072,7 +3081,8 @@ function verifZoneHTML(a){
   if(vm) h += `<div class="vs-done ${vm.resultado==='Observado'?'vs-obs':'vs-ok'}">${vm.resultado==='Observado'?'↩ Observado':'✓ Verificada'} por ${esc(vm.por)} · ${fmtDT(vm.fecha)}${vm.comentario?` — <i>${esc(vm.comentario)}</i>`:''}</div>`;
   else h += `<div class="vs-pend">⏳ Pendiente</div>`;
   if(puedeMet){
-    const opts = Object.entries(JEFATURAS_NOMBRES).map(([em,nm])=>`<option value="${em}">${esc(nm)}</option>`).join('');
+    const autoJef = SUP_JEFATURA[a.creadorEmail] || '';
+    const opts = Object.entries(JEFATURAS_NOMBRES).map(([em,nm])=>`<option value="${em}" ${em===autoJef?'selected':''}>${esc(nm)}</option>`).join('');
     h += `<div class="vs-form">
       <textarea id="vm-coment" placeholder="Comentario (obligatorio si observas)"></textarea>
       <label>Derivar a jefatura: <select id="vm-jefatura">${opts}</select></label>

@@ -911,7 +911,7 @@ function renderTabs(){
     return;
   }
   if(esJefatura()){
-    const tabs = [['inicio','🏠 Inicio'],['listado','📋 ADF a validar'],['tiempos','⏱ Control de Tiempos'],['lamina','📊 Lámina PM']];
+    const tabs = [['inicio','🏠 Inicio'],['listado','📋 ADF a validar'],['seguimiento','📌 Seguimiento'],['tiempos','⏱ Control de Tiempos'],['lamina','📊 Lámina PM']];
     $('tabs-nav').innerHTML = tabs.map(([k,l])=>`<button class="tab-btn" data-tab="${k}">${l}</button>`).join('');
     $('tabs-nav').querySelectorAll('.tab-btn').forEach(b=> b.addEventListener('click', ()=>irTab(b.dataset.tab)));
     return;
@@ -968,7 +968,9 @@ function actualizarBadges(){
 }
 
 function misADFs(){
-  return (esLider() || esVistaPMInd() || esJefatura()) ? _cache.adfs : _cache.adfs.filter(a=> a.creadorId===CU.id || a.creadorEmail===CU.email);
+  if(esLider() || esVistaPMInd()) return _cache.adfs;
+  if(esJefatura()) return _cache.adfs.filter(a=> a.jefaturaAsignada && a.jefaturaAsignada.email===CU.email);
+  return _cache.adfs.filter(a=> a.creadorId===CU.id || a.creadorEmail===CU.email);
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -1670,7 +1672,7 @@ function renderSeguimiento(){
    ═══════════════════════════════════════════════════════════ */
 function renderTiempos(){
   const today = new Date(); today.setHours(0,0,0,0);
-  const activos = _cache.adfs.filter(a=>['Aprobado','Seguimiento','PlanAccion'].includes(a.estado));
+  const activos = misADFs().filter(a=>['Aprobado','Seguimiento','PlanAccion'].includes(a.estado));
 
   const rows = [];
   for(const a of activos){

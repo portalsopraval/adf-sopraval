@@ -53,8 +53,8 @@ const JEFATURAS_NOMBRES = { 'gzapata@sopraval.cl':'Gonzalo Zapata','ccrojas@sopr
 // Mapping supervisor → jefatura asignada automáticamente
 const SUP_JEFATURA = {
   'lgodoyt@sopraval.cl':     'cllopez@sopraval.cl',   // Claudio Lopez
+  'ddhernandez@sopraval.cl': 'cllopez@sopraval.cl',
   'jvaldenegro@sopraval.cl': 'ccrojas@sopraval.cl',   // Cristian Rojas
-  'ddhernandez@sopraval.cl': 'ccrojas@sopraval.cl',
   'ppalmah@agrosuper.com':   'ccrojas@sopraval.cl',
   'gbernal@sopraval.cl':     'gzapata@sopraval.cl',   // Gonzalo Zapata
   'mparedess@sopraval.cl':   'gzapata@sopraval.cl',
@@ -816,7 +816,7 @@ const SEED_USERS = [
   { email:'jvaldenegro@sopraval.cl', name:'Juan Valdenegro',      role:'tecnico', cargo:'Supervisor Suministros',              area:'SUMINISTROS',   jefaturaEmail:'ccrojas@sopraval.cl' },
   { email:'lgodoyt@sopraval.cl',     name:'Leonardo Godoy',       role:'tecnico', cargo:'Supervisor Refrigeración',            area:'REFRIGERACION', jefaturaEmail:'cllopez@sopraval.cl' },
   { email:'ppalmah@agrosuper.com',   name:'Patricio Palma',       role:'tecnico', cargo:'Supervisor Riles / Subproductos',     area:'SUBPRODUCTOS',  jefaturaEmail:'ccrojas@sopraval.cl' },
-  { email:'ddhernandez@sopraval.cl', name:'Diego Hernández',      role:'tecnico', cargo:'Supervisor Eléctrico / Generación',   area:'GENERACION',    jefaturaEmail:'ccrojas@sopraval.cl' },
+  { email:'ddhernandez@sopraval.cl', name:'Diego Hernández',      role:'tecnico', cargo:'Supervisor Eléctrico / Generación',   area:'GENERACION',    jefaturaEmail:'cllopez@sopraval.cl' },
   // Jefaturas de mantenimiento (2º nivel de verificación)
   { email:'gzapata@sopraval.cl',     name:'Gonzalo Zapata',       role:'tecnico', cargo:'Jefatura de Mantenimiento' },
   { email:'ccrojas@sopraval.cl',     name:'Cristian Rojas',       role:'tecnico', cargo:'Jefatura de Mantenimiento' },

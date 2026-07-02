@@ -1966,10 +1966,10 @@ function laminaData(){
   adfs.filter(a=>['Aprobado','Seguimiento','PlanAccion'].includes(a.estado)).forEach(a=>{
     const planes=(a.analisis&&a.analisis.planes)||[]; const seg=a.seguimiento||[];
     planes.forEach((pl,i)=>{
-      if(!pl.fecha) return;
       const s=seg[i]||{};
       if(s.planAprobado) return;                 // plan cerrado → no aparece en la lámina
-      const atrasado = !s.porValidar && new Date(pl.fecha+'T00:00:00')<today;
+      if(!pl.fecha && !s.atrasadoImport) return; // sin fecha y sin marca de atrasado → ignorar
+      const atrasado = !s.porValidar && (s.atrasadoImport || (pl.fecha && new Date(pl.fecha+'T00:00:00')<today));
       let g=grupos.find(x=>x.adf===(a.folio||a.id));
       if(!g){ g={ adf:a.folio||a.id, area:normArea(a.area), equipo:a.equipo, fInicio:fechaCL(a.fechaInicio), planes:[] }; grupos.push(g); }
       g.planes.push({ plan:pl.actividad||'', responsable:pl.responsable||'', fCompr:fechaCL(pl.fecha), atrasado });
@@ -2262,11 +2262,14 @@ async function _pmLeerVert(file){
     if(plan){
       const tipoRaw=(_pmPick(f,['tipo solucion','tipo solución','tipo'])||'').toLowerCase();
       const tipo=tipoRaw.indexOf('inmed')>=0?'INMEDIATA':'PERMANENTE';
+      const estRaw=String(_pmPick(f,['estado solucion','estado solución','estado plan','est. solucion'])||'').toLowerCase().trim();
+      const estadoPlan=estRaw.indexOf('apro')>=0||estRaw.indexOf('termin')>=0||estRaw.indexOf('resuel')>=0?'aprobado'
+        :estRaw.indexOf('atr')>=0||estRaw.indexOf('venc')>=0||estRaw.indexOf('demor')>=0?'atrasado':'proceso';
       planes.push({
         adf:num, plan,
         responsable:_pmPick(f,['responsable'])||'',
         fCompr:_pmFecha(_pmPick(f,['fecha compr','fecha compromiso','compromiso','plazo'])),
-        tipo
+        tipo, estadoPlan
       });
     }
   });
@@ -2309,7 +2312,10 @@ async function procesarImportPM(){
       hoja,
       generados:registros.filter(r=>r.estado==='Aprobado').length,
       enProceso:registros.filter(r=>r.estado==='EnJefatura').length,
-      pendientes:registros.filter(r=>r.estado==='PorVerificar').length }};
+      pendientes:registros.filter(r=>r.estado==='PorVerificar').length,
+      planesAprobados:planes.filter(p=>p.estadoPlan==='aprobado').length,
+      planesAtrasados:planes.filter(p=>p.estadoPlan==='atrasado').length,
+      planesProceso:planes.filter(p=>p.estadoPlan==='proceso').length }};
     mostrarPreviewPM(data);
   }catch(e){ toast('Error al leer: '+e.message,'err'); }
 }
@@ -2335,7 +2341,13 @@ function mostrarPreviewPM(data){
         <span class="c-verde"><b>${m.generados}</b> Generados</span>
         <span class="c-ambar"><b>${m.enProceso}</b> En proceso</span>
         <span class="c-rojo"><b>${m.pendientes}</b> Pendientes</span>
-        <span><b>${m.nPlanes}</b> planes en <b>${m.adfConPlanes}</b> ADF</span>
+      </div>
+      <div class="sp-kpis" style="margin-top:6px;border-top:1px solid var(--border);padding-top:6px">
+        <span style="font-size:.8rem;color:var(--muted)">Planes:</span>
+        <span class="c-verde"><b>${m.planesAprobados}</b> ✅ aprobados</span>
+        <span class="c-rojo"><b>${m.planesAtrasados}</b> 🔴 atrasados</span>
+        <span class="c-ambar"><b>${m.planesProceso}</b> 🟡 en proceso</span>
+        <span><b>${m.nPlanes}</b> total en <b>${m.adfConPlanes}</b> ADF</span>
       </div>
       ${alertaPlanes}
       <table class="data sp-tbl"><thead><tr><th>Folio</th><th>Área</th><th>Equipo</th><th>→ Estado portal</th><th>Planes</th></tr></thead>
@@ -2361,7 +2373,7 @@ async function sembrarPM(data){
   try{
     for(const r of data.registros){
       const num=parseInt(String(r.spId).replace(/\D/g,''),10);
-      const planes=(planesPorAdf[num]||[]).map(p=>({ actividad:p.plan, tipo:p.tipo||'PERMANENTE', responsable:p.responsable||'', fecha:p.fCompr||'' }));
+      const planes=(planesPorAdf[num]||[]).map(p=>({ actividad:p.plan, tipo:p.tipo||'PERMANENTE', responsable:p.responsable||'', fecha:p.fCompr||'', estadoPlan:p.estadoPlan||'proceso' }));
       let areaR=r.area||'', lineaR=r.linea||'', sapR=r.codSap||'';
       const mq=inferirMaquina(r.equipo); if(mq){ areaR=mq.area||areaR; lineaR=mq.linea||lineaR; sapR=sapR||mq.sap||''; }
       areaR=normArea(areaR);
@@ -2375,7 +2387,16 @@ async function sembrarPM(data){
         const prevPlanes=(prev.analisis&&prev.analisis.planes)||[];
         const prevSeg=prev.seguimiento||[];
         const planesMerge=prevPlanes.slice(), segMerge=prevSeg.slice();
-        planes.forEach(np=>{ if(!planesMerge.some(pp=>norm(pp.actividad)===norm(np.actividad))){ planesMerge.push(np); segMerge.push({actividad:np.actividad,fechaSolucion:'',realizado:'',hecho:false,imagen:'',comentario:''}); } });
+        planes.forEach(np=>{
+          const ei=planesMerge.findIndex(pp=>norm(pp.actividad)===norm(np.actividad));
+          const esApro=np.estadoPlan==='aprobado', esAtr=np.estadoPlan==='atrasado';
+          if(ei<0){
+            planesMerge.push(np);
+            segMerge.push({actividad:np.actividad,fechaSolucion:'',realizado:'',hecho:esApro,planAprobado:esApro,atrasadoImport:esAtr,imagen:'',comentario:''});
+          } else if(!segMerge[ei]?.planAprobado){
+            segMerge[ei]={...(segMerge[ei]||{}),hecho:esApro,planAprobado:esApro,atrasadoImport:esAtr};
+          }
+        });
         // Actualiza estado solo si el import avanza el flujo (nunca hace downgrade)
         const ORDEN_EST={PorVerificar:0,Observado:1,EnJefatura:2,Aprobado:3,PlanAccion:4,Seguimiento:5,Cerrado:6};
         const prevOrd=ORDEN_EST[prev.estado]??-1, newOrd=ORDEN_EST[r.estado]??-1;
@@ -2388,7 +2409,7 @@ async function sembrarPM(data){
           componente:'', modoFalla:'', accionCorrectiva:'', tipoProblema:'', afectoProduccion:'No', imagen:'',
           condiciones:{ estado:'', estadoOtro:'', turno:'', pmVencido:'No', intervencion:'No', intervencionDet:'', fueraParam:'No', fueraParamDet:'' },
           analisis:{ modoDetectado:'', tipoEquipo:[], modosMixtos:[], causas:[], porques:[], planes },
-          seguimiento:planes.map(p=>({actividad:p.actividad,fechaSolucion:'',realizado:'',hecho:false,imagen:'',comentario:''})),
+          seguimiento:planes.map(p=>({actividad:p.actividad,fechaSolucion:'',realizado:'',hecho:p.estadoPlan==='aprobado',planAprobado:p.estadoPlan==='aprobado',atrasadoImport:p.estadoPlan==='atrasado',imagen:'',comentario:''})),
           estado:r.estado, creadorId:'sharepoint', creadorEmail:'sharepoint', creadorNombre:r.responsable||'SharePoint',
           verifMetodologia:null, jefaturaAsignada:null, verifJefatura:null, observaciones:[],
           evidencias:'', cerradoPor:'', cerradoAt:'', createdAt:r.fecha?(r.fecha+'T08:00:00.000Z'):nowISO,

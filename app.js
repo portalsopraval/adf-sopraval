@@ -1982,6 +1982,8 @@ function tiemposGrupo(g){
    (mismo formato que Status-ADF-Lamina-PM.pptx). Fuente: el portal.
    ═══════════════════════════════════════════════════════════ */
 let _laminaUpdate = '';   // fecha de la última "actualización semanal" (ISO)
+let _laminaOrden  = 'atrasados'; // criterio de orden de la tabla de planes
+function setLaminaOrden(v){ _laminaOrden=v; renderLamina(); }
 
 function fechaCL(iso){ if(!iso) return ''; const m=String(iso).split('-'); return m.length===3?`${m[2]}/${m[1]}/${m[0]}`:iso; }
 function fechaLarga(d){ try{ return new Date(d).toLocaleDateString('es-CL',{day:'2-digit',month:'long',year:'numeric'}); }catch(e){ return ''; } }
@@ -2046,7 +2048,24 @@ async function renderLamina(){
       </div>
     </div>`).join('');
 
-  const tablaHTML = grupos.length ? grupos.map(g=>`
+  // Ordenar grupos y planes de la lámina según _laminaOrden
+  const _pc=s=>{ if(!s) return Infinity; const p=s.split('/'); return p.length===3?new Date(+p[2],+p[1]-1,+p[0]).getTime():Infinity; };
+  const gruposOrden=[...grupos];
+  gruposOrden.forEach(g=>{ g.planes=[...g.planes].sort((a,b)=>{ if(a.atrasado!==b.atrasado) return a.atrasado?-1:1; return _pc(a.fCompr)-_pc(b.fCompr); }); });
+  if(_laminaOrden==='atrasados'){
+    gruposOrden.sort((a,b)=>{ const aA=a.planes.some(x=>x.atrasado),bA=b.planes.some(x=>x.atrasado); if(aA!==bA) return aA?-1:1; return _pc(a.planes[0]?.fCompr)-_pc(b.planes[0]?.fCompr); });
+  } else if(_laminaOrden==='fecha'){
+    gruposOrden.sort((a,b)=>_pc(a.planes[0]?.fCompr)-_pc(b.planes[0]?.fCompr));
+  } else if(_laminaOrden==='area'){
+    gruposOrden.sort((a,b)=>(a.area||'').localeCompare(b.area||''));
+  } else {
+    gruposOrden.sort((a,b)=>(a.adf||'').localeCompare(b.adf||''));
+  }
+
+  const LAM_ORDENES=[['atrasados','🔴 Atrasados primero'],['fecha','📅 Fecha compromiso'],['folio','# Folio'],['area','🏭 Área']];
+  const lamChips=LAM_ORDENES.map(([k,l])=>`<button class="chip ${_laminaOrden===k?'chip-on':''}" onclick="setLaminaOrden('${k}')">${l}</button>`).join('');
+
+  const tablaHTML = gruposOrden.length ? gruposOrden.map(g=>`
     <div class="lam-grp">
       <div class="lam-grp-head">${esc(g.adf)} · ${esc(g.area)} · ${esc(g.equipo)} · Inicio ${esc(g.fInicio)} · (${g.planes.length} ${g.planes.length===1?'plan':'planes'})</div>
       ${g.planes.map(p=>`
@@ -2093,6 +2112,7 @@ async function renderLamina(){
         <div class="lam-kpi"><div class="lam-kpi-l">Atrasados</div><div class="lam-kpi-v c-rojooscuro">${nAtras}</div></div>
         <div class="lam-kpi"><div class="lam-kpi-l">En proceso</div><div class="lam-kpi-v c-ambar">${nEnProc}</div></div>
       </div>
+      <div class="ct-toolbar" style="margin:8px 0 6px">${lamChips}</div>
       <div class="lam-tbl">
         <div class="lam-thead"><span>Estado</span><span>Plan de acción</span><span>Responsable</span><span>Compromiso</span></div>
         ${tablaHTML}

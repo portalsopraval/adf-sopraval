@@ -2129,6 +2129,17 @@ function generarLaminaPPTX(){
   s.addText(total+' ADF en total',{x:9.5,y:7.25,w:3.3,h:0.25,align:'right',fontFace:'Calibri',fontSize:10,color:GRIS});
 
   // ---- LÁMINA 2 ----
+  // Ordenar: atrasados primero → por fecha de compromiso ascendente (más vencido al tope)
+  const parseCompr=s=>{ if(!s) return Infinity; const p=s.split('/'); return p.length===3?new Date(+p[2],+p[1]-1,+p[0]).getTime():Infinity; };
+  grupos.forEach(g=>g.planes.sort((a,b)=>{
+    if(a.atrasado!==b.atrasado) return a.atrasado?-1:1;
+    return parseCompr(a.fCompr)-parseCompr(b.fCompr);
+  }));
+  grupos.sort((ga,gb)=>{
+    const aAt=ga.planes.some(x=>x.atrasado),bAt=gb.planes.some(x=>x.atrasado);
+    if(aAt!==bAt) return aAt?-1:1;
+    return parseCompr(ga.planes[0]?.fCompr)-parseCompr(gb.planes[0]?.fCompr);
+  });
   const PLANES=[]; grupos.forEach(g=>g.planes.forEach(pl=>PLANES.push(pl)));
   const short=t=>(t&&t.length>115)?t.slice(0,114).trim()+'…':(t||'');
   const s2=p.addSlide(); s2.background={color:'FFFFFF'};
@@ -2137,22 +2148,23 @@ function generarLaminaPPTX(){
   s2.addText('Planes atrasados y en proceso · Mantenimiento Planeado Sopraval',{x:0.5,y:0.66,w:9,h:0.35,fontFace:'Calibri',fontSize:13,color:'CADCFC'});
   s2.addText('● Datos del portal',{x:9.5,y:0.18,w:3.3,h:0.35,align:'right',fontFace:'Calibri',fontSize:13,bold:true,color:'FFFFFF'});
   s2.addText('Actualizado: '+hoy,{x:9.5,y:0.55,w:3.3,h:0.35,align:'right',fontFace:'Calibri',fontSize:12,color:'CADCFC'});
-  const nAtras=PLANES.filter(p=>p.atrasado).length, nEnProc=PLANES.length-nAtras;
+  const nAtras=PLANES.filter(x=>x.atrasado).length, nEnProc=PLANES.length-nAtras;
   const kp2=[{l:'ADF con planes',v:String(grupos.length),c:AZUL},{l:'Planes abiertos',v:String(PLANES.length),c:AZUL},{l:'Atrasados',v:String(nAtras),c:ATR_C},{l:'En proceso',v:String(nEnProc),c:AMBAR}];
   kp2.forEach((k,i)=>{ const x=kpX0+i*(kpW+kpGap);
     s2.addShape(p.ShapeType.roundRect,{x,y:kpY,w:kpW,h:1.0,fill:{color:'FFFFFF'},line:{color:LINEA,width:1},rectRadius:0.06});
     s2.addText(k.l,{x:x+0.18,y:kpY+0.12,w:kpW-0.3,h:0.3,fontFace:'Calibri',fontSize:12,color:GRIS});
     s2.addText(k.v,{x:x+0.18,y:kpY+0.42,w:kpW-0.3,h:0.5,fontFace:'Calibri',fontSize:30,bold:true,color:k.c}); });
   const colW2=[1.5,6.6,2.2,2.0],tblY=2.6,tblBottom=6.92,availT=tblBottom-tblY;
-  const nRows=grupos.length+PLANES.length+1, rowHt=Math.min(0.40,availT/Math.max(1,nRows));
-  const tsc=Math.max(0.5,Math.min(1,rowHt/0.40)),fc=Math.max(7,Math.round(11*tsc)),fh=Math.max(8,Math.round(12*tsc));
+  // rowHt mínimo 0.27" (legible) → si no cabe en una slide, autoPage agrega slides extra
+  const nRows=grupos.length+PLANES.length+1, rowHt=Math.max(0.27,Math.min(0.40,availT/Math.max(1,nRows)));
+  const tsc=Math.max(0.6,Math.min(1,rowHt/0.40)),fc=Math.max(8,Math.round(11*tsc)),fh=Math.max(9,Math.round(12*tsc));
   const tabla=[]; tabla.push(['Estado','Plan de acción','Responsable','Compromiso'].map((h,i)=>({text:h,options:{bold:true,color:'FFFFFF',fill:{color:AZUL},fontSize:fh,align:i===0||i===3?'center':'left'}})));
   grupos.forEach(g=>{
     tabla.push([{text:`${g.adf}   ·   ${g.area}   ·   ${g.equipo}   ·   Inicio ${g.fInicio}   ·   (${g.planes.length} ${g.planes.length===1?'plan':'planes'})`,options:{colspan:4,bold:true,color:AZUL,fill:{color:'E9EEF7'},fontSize:fh,align:'left'}}]);
     g.planes.forEach(pl=>{ const c=pl.atrasado?ATR_C:AMBAR,bg=pl.atrasado?ATR_BG:AMBARBG;
       tabla.push([{text:pl.atrasado?'Atrasado':'En proceso',options:{color:c,fill:{color:bg},bold:true,fontSize:fc,align:'center'}},{text:short(pl.plan),options:{color:TINTA,fontSize:fc}},{text:pl.responsable,options:{color:TINTA,fontSize:fc}},{text:pl.fCompr+(pl.atrasado?'  ▲':''),options:{color:pl.atrasado?ATR_C:TINTA,bold:pl.atrasado,fontSize:fc,align:'center'}}]); });
   });
-  s2.addTable(tabla,{x:0.5,y:tblY,w:12.3,colW:colW2,border:{type:'solid',color:LINEA,pt:0.5},align:'left',valign:'middle',fontFace:'Calibri',rowH:rowHt,autoPage:false});
+  s2.addTable(tabla,{x:0.5,y:tblY,w:12.3,colW:colW2,border:{type:'solid',color:LINEA,pt:0.5},align:'left',valign:'middle',fontFace:'Calibri',rowH:rowHt,autoPage:true,autoPageRepeatHeader:true,autoPageBackground:{color:'FFFFFF'},autoPageSlideStartY:1.3,autoPageLineWeight:0.5});
   s2.addText('Datos del Portal ADF · Agrupado por ADF.  Atrasado = compromiso vencido (▲).',{x:0.5,y:6.98,w:12.3,h:0.22,fontFace:'Calibri',fontSize:9.5,italic:true,color:GRIS});
   s2.addText('Fuente: Portal ADF (Firestore)',{x:0.5,y:7.25,w:9,h:0.25,fontFace:'Calibri',fontSize:10,color:GRIS});
   s2.addText(PLANES.length+' planes (atrasados + en proceso)',{x:9.0,y:7.25,w:3.8,h:0.25,align:'right',fontFace:'Calibri',fontSize:10,color:GRIS});

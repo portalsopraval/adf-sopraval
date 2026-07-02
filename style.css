@@ -706,3 +706,11 @@ table.data code { font-family: monospace; font-size: .82rem; color: var(--blue);
   font-size:.8rem; }
 .ct-accion { display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end; }
 .ct-aprobado { font-size:.82rem; font-weight:700; color:var(--green); }
+
+/* ═══ Motor de análisis v2: relevancia y recurrencia ═══ */
+.rel-tag { font-size:.68rem; font-weight:800; padding:1px 7px; border-radius:20px; white-space:nowrap; }
+.rel-alta  { background:#FEF3E8; color:var(--orange-dk); border:1px solid #F8CFA5; }
+.rel-media { background:var(--blue-lt); color:var(--blue); border:1px solid #C4D2F0; }
+.rel-baja  { background:var(--gray-lt); color:var(--gray); border:1px solid var(--border); }
+.alerta-recurrencia { background:#FFF7ED; border:1.5px solid #FDBA74; color:#7C2D12;
+  border-radius:var(--radius); padding:12px 16px; margin:0 0 16px; font-size:.88rem; line-height:1.5; }

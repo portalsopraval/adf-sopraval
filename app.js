@@ -731,8 +731,68 @@ function detectarModo(texto){
   return hits.length ? hits[0].modo : GENERICO;
 }
 
+/* ── Conocimiento por TIPOLOGÍA: porqués profundos y planes recomendados ──
+   Se usan para generar 5 porqués y planes DINÁMICOS según la causa marcada. */
+const PORQUES_TIPOLOGIA = {
+  'Desgaste / fatiga':[ '¿Por qué se desgastó el componente? → Operó más allá de su vida útil','¿Por qué operó más allá de su vida útil? → No existe control de vida útil / horas de operación','¿Por qué no existe control? → El componente no está en el plan de reemplazo preventivo' ],
+  'Lubricación deficiente':[ '¿Por qué faltó lubricación? → No se ejecutó la rutina de engrase/lubricación','¿Por qué no se ejecutó? → No existe carta de lubricación con puntos y frecuencias definidas','¿Por qué no existe? → La lubricación no está gestionada como tarea crítica del plan PM' ],
+  'Falla eléctrica / control':[ '¿Por qué falló el componente eléctrico? → Operó degradado sin detección temprana','¿Por qué no se detectó a tiempo? → No hay inspección termográfica/eléctrica periódica del circuito','¿Por qué no hay inspección? → El tablero/circuito no está incluido en el plan de inspección eléctrica' ],
+  'Obstrucción / atascamiento':[ '¿Por qué se obstruyó? → Acumulación progresiva de material/residuos','¿Por qué se acumuló? → La limpieza no se realiza con la frecuencia necesaria','¿Por qué la frecuencia es insuficiente? → Falta levantamiento de tareas de limpieza técnica por equipo' ],
+  'Corrosión / oxidación':[ '¿Por qué hay corrosión? → Exposición prolongada a humedad/agentes corrosivos','¿Por qué afectó al equipo? → Sin protección superficial adecuada para el ambiente','¿Por qué no se controló? → No existe plan de inspección de integridad/recubrimientos' ],
+  'Soltura / desajuste mecánico':[ '¿Por qué se soltó/desajustó? → La vibración normal aflojó los elementos de fijación','¿Por qué no se detectó? → No se verifica torque/apriete periódicamente','¿Por qué no se verifica? → La verificación de apriete no está en la pauta de inspección mecánica' ],
+  'Rotura / fractura':[ '¿Por qué se rompió? → El esfuerzo superó la resistencia del componente','¿Por qué superó la resistencia? → Fatiga o sobrecarga no detectada a tiempo','¿Por qué no se detectó? → El componente no tiene inspección de condición programada' ],
+  'Sobrecarga / sobreesfuerzo':[ '¿Por qué hubo sobrecarga? → El equipo operó sobre su capacidad de diseño','¿Por qué operó así? → Los parámetros de operación no están controlados','¿Por qué no están controlados? → Falta estándar operacional con límites definidos' ],
+  'Sensor / instrumentación':[ '¿Por qué falló la medición? → Instrumento descalibrado o dañado','¿Por qué estaba descalibrado? → No tiene calibración periódica programada','¿Por qué no la tiene? → El instrumento no está en el programa de gestión metrológica' ],
+  'Contaminación / suciedad':[ '¿Por qué se contaminó? → Ingreso de suciedad/contaminantes al sistema','¿Por qué ingresaron? → Sellado o limpieza insuficiente del entorno','¿Por qué es insuficiente? → No existe rutina definida de limpieza y control de contaminación' ],
+  'Fuga / pérdida de hermeticidad':[ '¿Por qué hay fuga? → Elemento de sello deteriorado (sello/empaquetadura/junta)','¿Por qué no se reemplazó a tiempo? → No hay control de vida útil de sellos','¿Por qué no hay control? → Los sellos no están catalogados como repuesto crítico' ],
+  'Sobrecalentamiento':[ '¿Por qué se sobrecalentó? → Disipación insuficiente o carga excesiva','¿Por qué la disipación fue insuficiente? → Sistema de refrigeración/ventilación degradado','¿Por qué se degradó sin aviso? → No hay monitoreo de temperatura ni limpieza programada' ],
+  'Vibración / desalineación':[ '¿Por qué vibraba? → Desalineación/desbalanceo no corregido','¿Por qué no se corrigió? → No se mide vibración periódicamente','¿Por qué no se mide? → El equipo no está en la ruta de análisis predictivo' ],
+  'Error operacional':[ '¿Por qué se operó incorrectamente? → Operación fuera del estándar definido','¿Por qué ocurrió? → Falta de capacitación o estándar poco claro','¿Por qué falta? → El procedimiento operacional no está formalizado ni entrenado' ],
+  'Falta de mantenimiento':[ '¿Por qué falló por mantenimiento? → La tarea preventiva no se ejecutó','¿Por qué no se ejecutó? → Plan vencido o con frecuencia inadecuada','¿Por qué está vencido? → No hay control de cumplimiento del plan preventivo' ],
+  'Material / repuesto inadecuado':[ '¿Por qué falló el repuesto? → El material no cumple la especificación requerida','¿Por qué se usó? → Se compró sin especificación técnica definida','¿Por qué no hay especificación? → El repuesto no está catalogado como crítico con ficha técnica' ],
+  'Otra / sin clasificar':[ '¿Por qué se produjo la condición anterior? → (profundizar con el equipo de análisis)','¿Por qué existía esa condición? → (profundizar con el equipo de análisis)','¿Por qué el sistema lo permitió? → (identificar la falla sistémica de fondo)' ],
+};
+const PLANES_TIPOLOGIA = {
+  'Desgaste / fatiga':[{a:'Incluir el componente en el plan de reemplazo preventivo con control de vida útil',t:'PERMANENTE'}],
+  'Lubricación deficiente':[{a:'Elaborar/actualizar carta de lubricación del equipo (puntos, lubricante y frecuencia)',t:'PERMANENTE'}],
+  'Falla eléctrica / control':[{a:'Incluir inspección termográfica y verificación de apriete de conexiones en el plan eléctrico',t:'PERMANENTE'}],
+  'Obstrucción / atascamiento':[{a:'Definir rutina de limpieza técnica con frecuencia según carga del equipo',t:'PERMANENTE'}],
+  'Corrosión / oxidación':[{a:'Aplicar protección anticorrosiva y programar inspección de integridad',t:'PERMANENTE'}],
+  'Soltura / desajuste mecánico':[{a:'Incluir verificación de torque/apriete en la pauta de inspección mecánica',t:'PERMANENTE'}],
+  'Rotura / fractura':[{a:'Evaluar la causa del sobreesfuerzo e incluir inspección de condición del componente',t:'PERMANENTE'}],
+  'Sobrecarga / sobreesfuerzo':[{a:'Definir y controlar parámetros máximos de operación (estándar operacional)',t:'PERMANENTE'}],
+  'Sensor / instrumentación':[{a:'Incluir el instrumento en el programa de calibración metrológica',t:'PERMANENTE'}],
+  'Contaminación / suciedad':[{a:'Definir rutina de limpieza y control de contaminación del sistema',t:'PERMANENTE'}],
+  'Fuga / pérdida de hermeticidad':[{a:'Catalogar sellos/empaquetaduras como repuesto crítico con reemplazo programado',t:'PERMANENTE'}],
+  'Sobrecalentamiento':[{a:'Incluir monitoreo de temperatura y limpieza del sistema de refrigeración en el plan PM',t:'PERMANENTE'}],
+  'Vibración / desalineación':[{a:'Incluir el equipo en la ruta de análisis de vibraciones y alineación',t:'PERMANENTE'}],
+  'Error operacional':[{a:'Formalizar el procedimiento operacional y capacitar a los operadores',t:'PERMANENTE'}],
+  'Falta de mantenimiento':[{a:'Regularizar el plan preventivo y controlar el % de cumplimiento mensual',t:'PERMANENTE'}],
+  'Material / repuesto inadecuado':[{a:'Especificar técnicamente el repuesto y catalogarlo como crítico',t:'PERMANENTE'}],
+};
+
+// 5 porqués dinámicos: se arman desde el síntoma, el modo y la causa marcada
+function porquesDesdeCausa(adf, modoNombre, causaTxt){
+  const sintoma=(adf.sintoma||adf.modoFalla||'la falla').trim();
+  const tp=tipologiaDeCausa(causaTxt);
+  const prof=PORQUES_TIPOLOGIA[tp]||PORQUES_TIPOLOGIA['Otra / sin clasificar'];
+  return [
+    `¿Por qué ocurrió "${sintoma}"? → ${modoNombre}`,
+    `¿Por qué se produjo? → ${causaTxt}`,
+    ...prof,
+  ].slice(0,5);
+}
+
+// ADF previos del mismo equipo (memoria de recurrencia)
+function adfPreviosEquipo(adf){
+  const eq=norm(adf.equipo||''); const sap=(adf.codSap||'').trim();
+  if(!eq && !sap) return [];
+  return _cache.adfs.filter(x=> x.id!==adf.id &&
+    ((eq && norm(x.equipo||'')===eq) || (sap && (x.codSap||'').trim()===sap)));
+}
+
 // Genera análisis completo a partir de los datos de la falla.
-// Asocia causas MIXTAS de acuerdo al origen de falla (varios modos a la vez).
+// Ranking por puntaje: texto + tipo de equipo + CONDICIONES del wizard + RECURRENCIA histórica.
 function generarAnalisis(adf){
   const texto  = [adf.sintoma, adf.modoFalla, adf.w_que, adf.w_como, adf.w_cual, adf.accionCorrectiva].join(' ');
   const fuerte = [adf.sintoma, adf.modoFalla].join(' '); // pesa el doble en la detección
@@ -742,62 +802,95 @@ function generarAnalisis(adf){
   const tipos = tiposEquipo(adf);
   const tipoModoIds = new Set();
   tipos.forEach(tp=> tp.modos.forEach(id=> tipoModoIds.add(id)));
-  // Bonus de puntaje a los modos propios del tipo de equipo y re-orden
   if(tipoModoIds.size){
     hits.forEach(h=>{ if(tipoModoIds.has(h.modo.id)) h.score += 2; });
     hits.sort((a,b)=> b.score - a.score);
   }
 
-  // Modo principal: el mejor del texto; si no hubo coincidencia pero sí tipo de equipo,
-  // se usa el primer modo típico de ese equipo en vez de "Análisis general".
   let primary;
   if(hits.length) primary = hits[0].modo;
   else if(tipoModoIds.size) primary = CATALOGO.find(m=> m.id===[...tipoModoIds][0]) || GENERICO;
   else primary = GENERICO;
   const primaryId = primary.id || '';
 
-  const causas = [];
-  const vistos = new Set();
-  const push = (txt, probable, origen) => {
-    const key = String(txt).toLowerCase().trim();
-    if(!key || vistos.has(key)) return;
-    vistos.add(key);
-    causas.push({ txt, probable, cat: categoria6M(txt), origen });
+  // ── Acumulador con puntaje (si la causa se repite, conserva el puntaje mayor) ──
+  const acc = new Map(); // key → {txt, score, origen}
+  const push = (txt, score, origen) => {
+    const key = String(txt).toLowerCase().trim(); if(!key) return;
+    const prev = acc.get(key);
+    if(!prev || score>prev.score) acc.set(key, { txt, score, origen });
   };
 
-  // 1) Causas del modo principal (la sugerida queda marcada como probable)
-  primary.causas.forEach((c,i)=> push(c, i===primary.probable, primary.nombre));
-  // 1b) Causas características del tipo de equipo (alta relevancia)
-  tipos.forEach(tp=> (tp.causas||[]).forEach(c=> push(c, false, 'Equipo: '+tp.nombre)));
-  // 2) Causas de los demás modos detectados en el texto (causas mixtas)
-  hits.slice(1).forEach(({modo})=> modo.causas.slice(0,6).forEach(c=> push(c, false, modo.nombre)));
-  // 2b) Causas de los modos típicos del equipo aunque no salieran en el texto
+  // 1) RECURRENCIA: causas raíz confirmadas en ADF previos del mismo equipo (máxima prioridad)
+  const previos = adfPreviosEquipo(adf);
+  const causasPrevias = [];
+  previos.forEach(p=> ((p.analisis&&p.analisis.causas)||[]).forEach(c=>{
+    if(c.probable && String(c.txt).trim()) causasPrevias.push(c.txt);
+  }));
+  [...new Set(causasPrevias)].slice(0,6).forEach(c=> push(c, 12, '📜 Histórico del equipo'));
+
+  // 2) Causas del modo principal (la sugerida del catálogo con bonus; decae por posición)
+  primary.causas.forEach((c,i)=> push(c, i===primary.probable?11:Math.max(9-i,5), primary.nombre));
+  // 3) Causas características del tipo de equipo
+  tipos.forEach(tp=> (tp.causas||[]).forEach(c=> push(c, 8, 'Equipo: '+tp.nombre)));
+  // 4) Causas de los demás modos detectados en el texto
+  hits.slice(1).forEach(({modo},ix)=> modo.causas.slice(0,6).forEach(c=> push(c, Math.max(6-ix,4), modo.nombre)));
+  // 5) Modos típicos del equipo no presentes en el texto
   tipoModoIds.forEach(id=>{
     if(id===primaryId || hits.some(h=>h.modo.id===id)) return;
     const m = CATALOGO.find(x=>x.id===id);
-    if(m) m.causas.slice(0,4).forEach(c=> push(c, false, m.nombre));
+    if(m) m.causas.slice(0,4).forEach(c=> push(c, 4, m.nombre));
   });
-  // 3) Causas de modos que comparten origen aunque no hayan aparecido en el texto
+  // 6) Modos relacionados por origen físico
   modosRelacionados(primaryId).forEach(id=>{
-    if(hits.some(h=>h.modo.id===id)) return; // ya incluido arriba
+    if(hits.some(h=>h.modo.id===id)) return;
     const m = CATALOGO.find(x=>x.id===id);
-    if(m) m.causas.slice(0,4).forEach(c=> push(c, false, m.nombre));
+    if(m) m.causas.slice(0,4).forEach(c=> push(c, 3, m.nombre));
   });
-  // 4) Causas generales transversales (siempre útiles como posibles fallas a descartar)
-  GENERICO.causas.forEach(c=> push(c, false, 'General'));
+  // 7) Genéricas transversales
+  GENERICO.causas.forEach(c=> push(c, 1, 'General'));
 
-  // Tope para no saturar la lista (las más relevantes quedan primero)
-  const MAX_CAUSAS = 30;
-  const causasFinal = causas.slice(0, MAX_CAUSAS);
+  // ── CONDICIONES del registro como EVIDENCIA (dato del wizard, antes ignorado) ──
+  const cond = adf.condiciones || {};
+  if(cond.pmVencido==='Sí'){
+    push('El plan de mantenimiento preventivo estaba vencido al momento de la falla', 11, '⚠ Condición: PM vencido');
+    acc.forEach(v=>{ if(tipologiaDeCausa(v.txt)==='Falta de mantenimiento') v.score+=4; });
+  }
+  if(cond.intervencion==='Sí'){
+    push('Falla inducida por intervención reciente en el equipo'+(cond.intervencionDet?` (${cond.intervencionDet})`:''), 11, '⚠ Condición: intervención reciente');
+    acc.forEach(v=>{ if(tipologiaDeCausa(v.txt)==='Error operacional') v.score+=3; });
+  }
+  if(cond.fueraParam==='Sí'){
+    push('Operación fuera de parámetros normales'+(cond.fueraParamDet?` (${cond.fueraParamDet})`:''), 10, '⚠ Condición: fuera de parámetro');
+    acc.forEach(v=>{ if(tipologiaDeCausa(v.txt)==='Sobrecarga / sobreesfuerzo') v.score+=3; });
+  }
 
-  // Orígenes adicionales realmente presentes en las causas (excluye el principal)
+  // ── Ranking final: ordenar por puntaje, top 16, relevancia visible, top marcadas ──
+  const MAX_CAUSAS = 16;
+  const ranked = [...acc.values()].sort((a,b)=> b.score-a.score).slice(0, MAX_CAUSAS);
+  const causasFinal = ranked.map((r,idx)=>({
+    txt: r.txt,
+    probable: idx===0 || (idx<3 && r.score>=10),
+    cat: categoria6M(r.txt),
+    origen: r.origen,
+    rel: r.score>=9?'alta':(r.score>=4?'media':'baja'),
+  }));
+
   const otros = [...new Set(causasFinal.map(c=>c.origen))].filter(o=> o && o!==primary.nombre);
+  const topCausa = causasFinal.find(c=>c.probable);
   return {
     modoDetectado: primary.nombre,
     tipoEquipo: tipos.map(t=>t.nombre),
     modosMixtos: otros,
     causas: causasFinal,
-    porques: (primary.porques || GENERICO.porques).slice(),
+    recurrencia: previos.length ? {
+      n: previos.length,
+      folios: previos.map(p=>p.folio||'').filter(Boolean).slice(0,5),
+      causas: [...new Set(causasPrevias)].slice(0,4),
+    } : null,
+    porques: (topCausa && topCausa.origen==='📜 Histórico del equipo')
+      ? porquesDesdeCausa(adf, primary.nombre, topCausa.txt)
+      : (primary.porques || GENERICO.porques).slice(),
     planes: (primary.acciones || GENERICO.acciones).map(a=>({ actividad:a.a, tipo:a.t, responsable:'', fecha:'' })),
   };
 }
@@ -1453,9 +1546,11 @@ function renderAnalisisZone(){
     <div class="section-head"><h3>Análisis propuesto — modo detectado: ${esc(an.modoDetectado)}</h3>
       <p>${(an.tipoEquipo&&an.tipoEquipo.length)?`<b>Tipo de equipo:</b> ${esc(an.tipoEquipo.join(' · '))} · `:''}Revisa y ajusta. Marca todas las causas probables.${(an.modosMixtos&&an.modosMixtos.length)?` <b>Causas mixtas por origen:</b> ${esc(an.modosMixtos.join(' · '))}.`:''}</p></div>
 
+    ${an.recurrencia?`<div class="alerta-recurrencia">📜 <b>Equipo con historial:</b> ${an.recurrencia.n} ADF previo(s)${an.recurrencia.folios.length?` (${an.recurrencia.folios.map(esc).join(' · ')})`:''}.${an.recurrencia.causas.length?` Causas raíz confirmadas antes: <i>${an.recurrencia.causas.map(esc).join(' · ')}</i> — ya priorizadas en la lista.`:''}</div>`:''}
+
     <div class="card">
       <div class="card-title">4 · Causas Probables (marca todas las que apliquen)</div>
-      <p class="muted" style="margin:-4px 0 10px;font-size:.85rem">Puedes marcar <b>más de una</b> causa probable y clasificar cada una según las <b>6M</b> (Máquina · Mano de obra · Método · Material · Medición · Medio ambiente).</p>
+      <p class="muted" style="margin:-4px 0 10px;font-size:.85rem">Ordenadas por <b>relevancia</b> (⭐ alta · ◐ media · ○ baja) según texto, tipo de equipo, condiciones del registro e historial. Puedes marcar <b>más de una</b> y clasificar según las <b>6M</b>.</p>
       <div class="causa-list" id="causa-list">
         ${an.causas.map((c,i)=>causaRowHTML(c,i)).join('')}
       </div>
@@ -1558,6 +1653,7 @@ function causaRowHTML(c,i){
     <span class="c-num">${i+1}</span>
     <span class="c-txt">
       <textarea rows="1" onchange="editCausa(${i},this.value)">${esc(c.txt)}</textarea>
+      ${c.rel?`<span class="rel-tag rel-${c.rel}" title="Relevancia estimada por el motor">${c.rel==='alta'?'⭐ Alta':c.rel==='media'?'◐ Media':'○ Baja'}</span>`:''}
       ${c.origen?`<span class="origen-tag" title="Origen de falla asociado">${esc(c.origen)}</span>`:''}
     </span>
     <select class="c-cat" onchange="editCausaCat(${i},this.value)" title="Categoría 6M (Ishikawa)">
@@ -1605,7 +1701,28 @@ function generarSintesis(){
   };
   an.sintesis = s;
   $('sintesis-zone').innerHTML = sintesisHTML(s);
-  toast('Análisis de causas seleccionadas generado.','ok');
+
+  // ── 5 porqués dinámicos desde la causa probable de mayor relevancia ──
+  an.porques = porquesDesdeCausa(_wizard, an.modoDetectado, sel[0].txt);
+  const pc = document.querySelector('#analisis-zone .porque-chain');
+  if(pc) pc.innerHTML = an.porques.map((p,i)=>`
+    <div class="porque-step">
+      <span class="p-badge">¿Por qué? ${i+1}</span>
+      <textarea rows="1" onchange="editPorque(${i},this.value)">${esc(p)}</textarea>
+    </div>`).join('');
+
+  // ── Planes sugeridos según la TIPOLOGÍA de cada causa seleccionada ──
+  let nuevos=0;
+  sel.forEach(c=>{
+    const tp=tipologiaDeCausa(c);
+    (PLANES_TIPOLOGIA[tp]||[]).forEach(pl=>{
+      if(an.planes.some(x=> norm(x.actividad)===norm(pl.a))) return;
+      an.planes.push({ actividad:pl.a, tipo:pl.t, responsable:'', fecha:'' }); nuevos++;
+    });
+  });
+  if(nuevos && $('plan-list')) $('plan-list').innerHTML = an.planes.map((pl,j)=>planRowHTML(pl,j)).join('');
+
+  toast(`Análisis generado · 5 porqués actualizados desde la causa probable${nuevos?` · ${nuevos} plan(es) sugerido(s) por tipología`:''}.`,'ok');
 }
 
 // Render de la síntesis de causas seleccionadas
@@ -3101,7 +3218,7 @@ function abrirADF(id){
     <div class="section-head"><h3>4 · Causas probables ${a.analisis?`<small class="muted">(${esc(a.analisis.modoDetectado)}${(a.analisis.tipoEquipo&&a.analisis.tipoEquipo.length)?' · '+esc(a.analisis.tipoEquipo.join(' · ')):''})</small>`:''}</h3>${puedeEditarADF(a)?`<button class="btn-ghost btn-sm" onclick="editarAnalisis('${a.id}')">✏️ Editar análisis</button>`:''}</div>
     <div id="an-edit"></div>
     <div class="causa-list">${(a.analisis?.causas||[]).map((c,i)=>
-      `<div class="causa-item ${c.probable?'probable':''}"><span class="c-num">${i+1}</span><span class="c-txt">${esc(c.txt)} ${c.cat?`<span class="cat-tag">${esc(c.cat)}</span>`:''} ${c.origen?`<span class="origen-tag">${esc(c.origen)}</span>`:''} ${c.probable?'<b style="color:var(--orange-dk)"> ← probable</b>':''}</span></div>`).join('')}</div>
+      `<div class="causa-item ${c.probable?'probable':''}"><span class="c-num">${i+1}</span><span class="c-txt">${esc(c.txt)} ${c.rel?`<span class="rel-tag rel-${c.rel}">${c.rel==='alta'?'⭐':c.rel==='media'?'◐':'○'}</span>`:''} ${c.cat?`<span class="cat-tag">${esc(c.cat)}</span>`:''} ${c.origen?`<span class="origen-tag">${esc(c.origen)}</span>`:''} ${c.probable?'<b style="color:var(--orange-dk)"> ← probable</b>':''}</span></div>`).join('')}</div>
     ${a.analisis?.sintesis?sintesisHTML(a.analisis.sintesis):''}
 
     <div class="section-head"><h3>5 · 5 Porqués</h3></div>

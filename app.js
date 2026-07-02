@@ -1048,7 +1048,7 @@ function escucharADFs(){
     _cache.adfs = snap.docs.map(d=>({ id:d.id, ...d.data() }))
       .sort((a,b)=> (b.createdAt||'').localeCompare(a.createdAt||''));
     _cache.cargado = true;
-    if(['inicio','listado','seguimiento','tiempos','confiabilidad'].includes(_activeTab)) irTab(_activeTab);
+    if(['inicio','listado','seguimiento','tiempos','confiabilidad','lamina'].includes(_activeTab)) irTab(_activeTab);
     actualizarBadges();
   });
 }
@@ -2302,7 +2302,11 @@ async function sembrarPM(data){
         const prevSeg=prev.seguimiento||[];
         const planesMerge=prevPlanes.slice(), segMerge=prevSeg.slice();
         planes.forEach(np=>{ if(!planesMerge.some(pp=>norm(pp.actividad)===norm(np.actividad))){ planesMerge.push(np); segMerge.push({actividad:np.actividad,fechaSolucion:'',realizado:'',hecho:false,imagen:'',comentario:''}); } });
-        await ref.set({ ...cabecera, analisis:{ ...(prev.analisis||{}), planes:planesMerge }, seguimiento:segMerge }, {merge:true});
+        // Actualiza estado solo si el import avanza el flujo (nunca hace downgrade)
+        const ORDEN_EST={PorVerificar:0,Observado:1,EnJefatura:2,Aprobado:3,PlanAccion:4,Seguimiento:5,Cerrado:6};
+        const prevOrd=ORDEN_EST[prev.estado]??-1, newOrd=ORDEN_EST[r.estado]??-1;
+        const estUpd = newOrd>prevOrd ? {estado:r.estado, historial:firebase.firestore.FieldValue.arrayUnion({accion:`Avanzado por import SharePoint: ${prev.estado||'?'} → ${r.estado} (${r.statusRaw})`,usuario:CU.name,fecha:nowISO})} : {};
+        await ref.set({ ...cabecera, ...estUpd, analisis:{ ...(prev.analisis||{}), planes:planesMerge }, seguimiento:segMerge }, {merge:true});
         actualizados++;
       }else{
         await ref.set({

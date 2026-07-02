@@ -1817,14 +1817,50 @@ async function comprimirImg(file){
 /* ═══════════════════════════════════════════════════════════
    SEGUIMIENTO
    ═══════════════════════════════════════════════════════════ */
+let _segOrden='atrasados';
+function setSegOrden(v){ _segOrden=v; renderSeguimiento(); }
+
 function renderSeguimiento(){
   if(!_cache.cargado){ $('pane-seguimiento').innerHTML=skeletonHTML(); return; }
-  // Todos los ADF no cerrados que tienen planes de acción
-  const data=misADFs().filter(a=> a.estado!=='Cerrado' && ((a.analisis&&a.analisis.planes)||[]).length);
+  let data=misADFs().filter(a=> a.estado!=='Cerrado' && ((a.analisis&&a.analisis.planes)||[]).length);
   const nPlanes=data.reduce((s,a)=>s+((a.analisis&&a.analisis.planes)||[]).length,0);
+
+  // Calcular el plan más crítico de cada ADF para poder ordenar
+  const rows=calcRows(data);
+  const adfMeta={};
+  rows.forEach(r=>{
+    const id=r.a.id;
+    if(!adfMeta[id]) adfMeta[id]={minDias:Infinity,tieneAtrasado:false,tieneEnProceso:false};
+    if(r.statusPlan==='Atrasado'){ adfMeta[id].tieneAtrasado=true; adfMeta[id].minDias=Math.min(adfMeta[id].minDias,r.diasRest); }
+    if(r.statusPlan==='EnProceso'){ adfMeta[id].tieneEnProceso=true; adfMeta[id].minDias=Math.min(adfMeta[id].minDias,r.diasRest); }
+  });
+
+  // Ordenar según criterio activo
+  data=[...data];
+  if(_segOrden==='atrasados'){
+    data.sort((a,b)=>{
+      const ma=adfMeta[a.id]||{}, mb=adfMeta[b.id]||{};
+      if(ma.tieneAtrasado!==mb.tieneAtrasado) return ma.tieneAtrasado?-1:1;
+      return (ma.minDias??Infinity)-(mb.minDias??Infinity);
+    });
+  } else if(_segOrden==='fecha'){
+    data.sort((a,b)=>{
+      const ma=adfMeta[a.id]||{}, mb=adfMeta[b.id]||{};
+      return (ma.minDias??Infinity)-(mb.minDias??Infinity);
+    });
+  } else if(_segOrden==='area'){
+    data.sort((a,b)=>(a.area||'').localeCompare(b.area||''));
+  } else {
+    data.sort((a,b)=>(a.folio||'').localeCompare(b.folio||''));
+  }
+
+  const ORDENES=[['atrasados','🔴 Atrasados primero'],['fecha','📅 Fecha compromiso'],['folio','# Folio'],['area','🏭 Área']];
+  const chips=ORDENES.map(([k,l])=>`<button class="chip ${_segOrden===k?'chip-on':''}" onclick="setSegOrden('${k}')">${l}</button>`).join('');
+
   $('pane-seguimiento').innerHTML = `
     <div class="page-title">📌 Seguimiento de Soluciones</div>
     <div class="page-sub">${data.length} ADF abiertos con ${nPlanes} plan(es) de acción</div>
+    <div class="ct-toolbar" style="margin-bottom:10px">${chips}</div>
     ${data.length? tablaADF(data) : `<div class="empty"><div class="e-icon">✅</div>No hay planes de acción pendientes.</div>`}
   `;
 }

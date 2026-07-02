@@ -3936,8 +3936,123 @@ function escucharPlanesMP(){
   });
 }
 
+/* ═══════════════════════════════════════════════════════════
+   MOTOR PM — Motor de recomendación de planes de mantenimiento
+   Cruza: tipologías de falla del ADF + recurrencia histórica del
+   equipo + downtime + condiciones (PM vencido) → recomienda
+   actividades con técnica, frecuencia y prioridad. 100% local.
+   Acceso: Gino Véliz + Freddy Carroza.
+   ═══════════════════════════════════════════════════════════ */
+const MOTOR_PM_ACCESO = ['gvelizm@sopraval.cl','fcarroza@sopraval.cl'];
+const tieneMotorPM = () => CU && MOTOR_PM_ACCESO.includes((CU.email||'').toLowerCase());
+let _pmVista = null;          // 'motor' | 'planes' (subvista del tab mantenimiento)
+let _motorRec = {};           // cache adfId -> recomendación (para crear plan desde tarjeta)
+let _motorFiltro = 'sinplan'; // 'sinplan' | 'todos'
+
+// Catálogo de técnicas PM por tipología de falla (tipo válido del formulario + frecuencia base)
+const MOTOR_TECNICAS = {
+  'Desgaste / fatiga':[
+    {d:'Inspección de condición y medición de desgaste del componente',tipo:'Inspección',frec:'Mensual'},
+    {d:'Reemplazo preventivo por vida útil con registro de horas de operación',tipo:'Reemplazo',frec:'Semestral'}],
+  'Lubricación deficiente':[
+    {d:'Ruta de relubricación según carta de lubricación (puntos, lubricante, cantidad)',tipo:'Lubricación',frec:'Semanal'},
+    {d:'Análisis de lubricante para detectar contaminación o degradación',tipo:'Verificación',frec:'Trimestral'}],
+  'Falla eléctrica / control':[
+    {d:'Termografía de tableros, conexiones y motor',tipo:'Inspección',frec:'Trimestral'},
+    {d:'Verificación de apriete de conexiones y medición de aislamiento',tipo:'Ajuste',frec:'Semestral'}],
+  'Obstrucción / atascamiento':[
+    {d:'Limpieza técnica programada de zonas de acumulación',tipo:'Limpieza',frec:'Semanal'},
+    {d:'Inspección de flujo y puntos de atascamiento',tipo:'Inspección',frec:'Mensual'}],
+  'Corrosión / oxidación':[
+    {d:'Inspección de integridad y estado de recubrimientos',tipo:'Inspección',frec:'Trimestral'},
+    {d:'Aplicación de protección anticorrosiva en puntos críticos',tipo:'Ajuste',frec:'Semestral'}],
+  'Soltura / desajuste mecánico':[
+    {d:'Verificación de torque/apriete de pernos y elementos de fijación',tipo:'Ajuste',frec:'Mensual'},
+    {d:'Inspección visual de soltura y fijaciones en operación',tipo:'Inspección',frec:'Semanal'}],
+  'Rotura / fractura':[
+    {d:'Inspección de condición del componente (grietas, fisuras, deformación)',tipo:'Inspección',frec:'Mensual'},
+    {d:'Reemplazo preventivo del componente según vida útil estimada',tipo:'Reemplazo',frec:'Semestral'}],
+  'Sobrecarga / sobreesfuerzo':[
+    {d:'Verificación de parámetros de operación vs. límites de diseño',tipo:'Verificación',frec:'Semanal'},
+    {d:'Capacitación en estándar operacional con límites definidos',tipo:'Capacitación',frec:'Semestral'}],
+  'Sensor / instrumentación':[
+    {d:'Calibración del instrumento según patrón metrológico',tipo:'Calibración',frec:'Trimestral'},
+    {d:'Verificación funcional de señal y lectura del sensor',tipo:'Verificación',frec:'Mensual'}],
+  'Contaminación / suciedad':[
+    {d:'Rutina de limpieza y control de contaminación del sistema',tipo:'Limpieza',frec:'Semanal'},
+    {d:'Inspección y reemplazo de filtros/elementos de sellado',tipo:'Reemplazo',frec:'Mensual'}],
+  'Fuga / pérdida de hermeticidad':[
+    {d:'Inspección de sellos, empaquetaduras y juntas (fugas visibles)',tipo:'Inspección',frec:'Semanal'},
+    {d:'Reemplazo programado de sellos por vida útil',tipo:'Reemplazo',frec:'Semestral'}],
+  'Sobrecalentamiento':[
+    {d:'Monitoreo de temperatura en operación (termografía o sensor)',tipo:'Inspección',frec:'Mensual'},
+    {d:'Limpieza del sistema de refrigeración/ventilación',tipo:'Limpieza',frec:'Mensual'}],
+  'Vibración / desalineación':[
+    {d:'Medición de vibraciones en ruta predictiva',tipo:'Inspección',frec:'Mensual'},
+    {d:'Verificación de alineación y balanceo tras intervención',tipo:'Ajuste',frec:'Por condición'}],
+  'Error operacional':[
+    {d:'Capacitación en procedimiento operacional estándar del equipo',tipo:'Capacitación',frec:'Semestral'},
+    {d:'Verificación de cumplimiento del estándar operacional',tipo:'Verificación',frec:'Mensual'}],
+  'Falta de mantenimiento':[
+    {d:'Incorporar equipo al plan preventivo con pauta y frecuencia definida',tipo:'Inspección',frec:'Mensual'},
+    {d:'Control mensual de % de cumplimiento del plan preventivo',tipo:'Verificación',frec:'Mensual'}],
+  'Material / repuesto inadecuado':[
+    {d:'Verificación de especificación técnica del repuesto instalado',tipo:'Verificación',frec:'Por condición'},
+    {d:'Inspección de desempeño del repuesto crítico en operación',tipo:'Inspección',frec:'Trimestral'}],
+  'Otra / sin clasificar':[
+    {d:'Inspección general de condición del equipo',tipo:'Inspección',frec:'Mensual'}],
+};
+
+const FRECS_ORDEN = ['Diaria','Semanal','Quincenal','Mensual','Trimestral','Semestral','Anual'];
+function subirFrecuencia(f){ const i=FRECS_ORDEN.indexOf(f); return i>0 ? FRECS_ORDEN[i-1] : f; }
+
+// Tipologías detectadas en un ADF: causas marcadas del análisis + modo de falla + síntoma
+function motorTipologias(a){
+  const set = new Set();
+  (a.analisis?.causas||[]).forEach(c=>{ const t=tipologiaDeCausa(c); if(t) set.add(t); });
+  const tTxt = tipologiaDeCausa((a.modoFalla||'')+' '+(a.sintoma||''));
+  if(tTxt && tTxt!=='Otra / sin clasificar') set.add(tTxt);
+  // la genérica solo se usa si no hay ninguna tipología específica
+  if(set.size>1) set.delete('Otra / sin clasificar');
+  if(!set.size) set.add('Otra / sin clasificar');
+  return [...set].slice(0,4);
+}
+
+// Núcleo del motor: recomendación completa para un ADF
+function motorPMRecomendar(a){
+  const tipologias = motorTipologias(a);
+  const previos = adfPreviosEquipo(a);
+  const nRec = previos.length;
+  const dt = downtimeHoras(a);
+  const pmVencido = (a.condiciones?.pmVencido==='Sí'||a.condiciones?.pmVencido==='Si');
+
+  // ── Score de prioridad 0-100 ──
+  let score = 35;
+  score += Math.min(30, nRec*15);                    // recurrencia histórica del equipo
+  if(dt!=null){ if(dt>=12) score+=25; else if(dt>=4) score+=15; else if(dt>=1) score+=8; }
+  if(pmVencido) score += 10;
+  if(a.tipoProblema==='Recurrente') score += 10;
+  score = Math.min(100, score);
+  const nivel = score>=70?'Alta':score>=45?'Media':'Baja';
+
+  // ── Actividades: acciones PERMANENTES del ADF + técnicas por tipología ──
+  const acts=[]; const vistos=new Set();
+  const push=(d,tipo,frec,origen)=>{ const k=norm(d).slice(0,60); if(!d||vistos.has(k))return; vistos.add(k); acts.push({descripcion:d,tipo,frecuencia:frec,origen}); };
+  (a.analisis?.planes||[]).filter(p=>p.tipo==='PERMANENTE').forEach(p=>push(p.actividad,'Verificación','Mensual','ADF'));
+  tipologias.forEach(tp=>(MOTOR_TECNICAS[tp]||[]).forEach(t=>{
+    let frec=t.frec;
+    if(nRec>=2 && FRECS_ORDEN.includes(frec)) frec=subirFrecuencia(frec); // recurrente → intensificar
+    push(t.d,t.tipo,frec,tp);
+  }));
+
+  return { tipologias, nRec, previos, dt, pmVencido, score, nivel, acts };
+}
+
 function renderMantenimiento(){
-  if(esVistaPMInd()) { renderMantenimientoPM(); return; }
+  const motor = tieneMotorPM();
+  if(_pmVista===null) _pmVista = motor ? 'motor' : 'planes';
+  if(motor && _pmVista==='motor'){ renderMotorPM(); return; }
+
   const planes = _cache.planes;
   const kAct  = planes.filter(p=>p.estado==='Activo').length;
   const kPend = planes.filter(p=>p.estado==='Pendiente').length;
@@ -3945,6 +4060,10 @@ function renderMantenimiento(){
   $('pane-mantenimiento').innerHTML = `
     <div class="page-title">🔧 Planes de Mantenimiento Preventivo</div>
     <div class="page-sub">Derivados de análisis ADF — acciones estructurales para prevenir recurrencia de fallas</div>
+    ${motor?`<div class="ct-toolbar" style="margin:10px 0 14px">
+      <button class="chip" onclick="setPmVista('motor')">🤖 Motor PM</button>
+      <button class="chip chip-on">🔧 Planes creados</button>
+    </div>`:''}
     <div class="kpi-grid">
       <div class="kpi accent"><div class="k-val">${planes.length}</div><div class="k-lbl">Total planes PM</div></div>
       <div class="kpi"><div class="k-val">${kAct}</div><div class="k-lbl">Activos</div></div>
@@ -3959,67 +4078,101 @@ function renderMantenimiento(){
   `;
 }
 
-// ── Vista de sugerencias PM para Freddy (esVistaPMInd) ──
-function renderMantenimientoPM(){
-  const adfsGen = misADFs(); // ya filtrado a ESTADOS_GENERADO
-  // Para cada ADF generado, obtener si ya tiene plan PM creado
+function setPmVista(v){ _pmVista=v; renderMantenimiento(); }
+function setMotorFiltro(v){ _motorFiltro=v; renderMantenimiento(); }
+
+// ── Vista Motor PM (Gino + Freddy) ──
+function renderMotorPM(){
+  const adfsGen = (esVistaPMInd()?misADFs():_cache.adfs.filter(a=>ESTADOS_GENERADO.includes(a.estado)));
   const planPorAdf = {};
   _cache.planes.forEach(pl=>{ if(pl.adfId) planPorAdf[pl.adfId]=pl; });
 
-  const sinPlan = adfsGen.filter(a=>!planPorAdf[a.id]);
-  const conPlan = adfsGen.filter(a=> planPorAdf[a.id]);
+  _motorRec = {};
+  const recs = adfsGen.map(a=>{ const r=motorPMRecomendar(a); _motorRec[a.id]=r; return {a,r,tienePlan:!!planPorAdf[a.id]}; })
+    .sort((x,y)=> y.r.score - x.r.score);
 
-  // Construir sugerencias por ADF: planes PERMANENTE del analisis + fallback genérico
-  function sugerencias(a){
-    const perm = (a.analisis?.planes||[]).filter(p=>p.tipo==='PERMANENTE');
-    if(perm.length) return perm.map(p=>`<li>${esc(p.actividad)}</li>`).join('');
-    // fallback basado en modo de falla
-    const mf = (a.modoFalla||a.sintoma||'').toLowerCase();
-    const items = [];
-    if(/lubric|desgast|rodami|cojin/.test(mf)) items.push('Programa de relubricación periódica','Inspección de rodamientos y acoplamientos');
-    if(/sello|fuga|hermet/.test(mf)) items.push('Reemplazo programado de sellos mecánicos','Verificación de torque y ajuste de bridas');
-    if(/electr|motor|corrient|bobina/.test(mf)) items.push('Medición de aislamiento eléctrico (megger)','Termografía de tableros y conexiones');
-    if(/filtro|suciedad|contamina/.test(mf)) items.push('Limpieza y reemplazo periódico de filtros','Análisis de aceite / lubricante');
-    if(/vibrac|desaline|balanc/.test(mf)) items.push('Análisis de vibración periódico','Alineación y balanceo programado');
-    if(!items.length) items.push('Incorporar equipo a rutina de mantenimiento preventivo','Definir frecuencia de inspección y responsable');
-    return items.map(x=>`<li>${esc(x)}</li>`).join('');
-  }
+  const sinPlan = recs.filter(x=>!x.tienePlan);
+  const lista = _motorFiltro==='sinplan' ? sinPlan : recs;
+  const nAlta = sinPlan.filter(x=>x.r.nivel==='Alta').length;
 
-  const cardsSin = sinPlan.length ? sinPlan.map(a=>`
-    <div class="pm-card pm-card-pend">
+  const nivelCls = {Alta:'mot-alta',Media:'mot-media',Baja:'mot-baja'};
+  const cards = lista.length ? lista.map(({a,r,tienePlan})=>`
+    <div class="pm-card ${tienePlan?'':'pm-card-pend'}" id="mot-card-${a.id}">
       <div class="pm-card-head">
+        <span class="mot-score ${nivelCls[r.nivel]}" title="Prioridad calculada: recurrencia + downtime + condiciones">${r.score}</span>
         <span class="pm-folio">${esc(a.folio||'—')}</span>
         <span class="pm-area">${esc(normArea(a.area)||'—')}</span>
-        <span class="badge b-analisis" style="margin-left:auto">Sin plan PM</span>
+        ${tienePlan?`<span class="badge b-cerrado" style="margin-left:auto">Ya tiene plan</span>`:`<span class="badge b-analisis" style="margin-left:auto">Prioridad ${r.nivel}</span>`}
       </div>
       <div class="pm-card-eq">${esc(a.equipo||'—')}</div>
-      ${a.modoFalla?`<div class="pm-card-modo">Modo: ${esc(a.modoFalla)}</div>`:''}
+      <div class="mot-señales">
+        ${r.nRec?`<span class="mot-tag mot-tag-rec" title="${r.previos.map(p=>p.folio).join(', ')}">🔁 ${r.nRec} falla(s) previa(s) del equipo</span>`:''}
+        ${r.dt!=null?`<span class="mot-tag">⏱ Downtime ${fmtDur(r.dt)}</span>`:''}
+        ${r.pmVencido?`<span class="mot-tag mot-tag-warn">⚠ PM vencido al fallar</span>`:''}
+        ${r.tipologias.map(t=>`<span class="mot-tag mot-tag-tip">${esc(t)}</span>`).join('')}
+      </div>
       <div class="pm-card-sug">
-        <b>💡 Sugerencias de actividades PM:</b>
-        <ul class="pm-sug-list">${sugerencias(a)}</ul>
+        <b>🤖 Plan recomendado (${r.acts.length} actividades):</b>
+        <div class="mot-acts">
+          ${r.acts.map((ac,i)=>`
+            <label class="mot-act">
+              <input type="checkbox" checked data-mot-idx="${i}">
+              <span class="mot-act-d">${esc(ac.descripcion)}</span>
+              <span class="mot-act-meta">${esc(ac.tipo)} · ${esc(ac.frecuencia)}${ac.origen==='ADF'?' · <b>del análisis</b>':''}</span>
+            </label>`).join('')}
+        </div>
       </div>
       <div class="pm-card-foot">
-        <button class="btn-primary btn-sm" onclick="abrirNuevoPlanDesde('${a.id}')">➕ Crear Plan PM</button>
+        ${tienePlan
+          ?`<button class="btn-secondary btn-sm" onclick="abrirPlanMP('${planPorAdf[a.id].id}')">Ver plan existente</button>`
+          :`<button class="btn-primary btn-sm" onclick="crearPlanDesdeMotor('${a.id}')">➕ Crear Plan PM con seleccionadas</button>`}
       </div>
     </div>`).join('')
-    : `<div class="empty" style="padding:18px"><div class="e-icon">✅</div>Todos los ADF generados tienen plan PM asignado.</div>`;
-
-  const cardsConHTML = conPlan.length ? `
-    <div class="section-head" style="margin-top:22px"><h3>✅ Con plan PM (${conPlan.length})</h3></div>
-    ${tablaPlanesMP(conPlan.map(a=>planPorAdf[a.id]))}` : '';
+    : `<div class="empty" style="padding:18px"><div class="e-icon">✅</div>Todos los ADF generados tienen plan PM.</div>`;
 
   $('pane-mantenimiento').innerHTML = `
-    <div class="page-title">🔧 Planes PM — ADF Generados</div>
-    <div class="page-sub">Sugerencias de mantenimiento preventivo derivadas del análisis de falla</div>
+    <div class="page-title">🤖 Motor PM — Recomendación de Planes</div>
+    <div class="page-sub">Analiza tipología de falla, recurrencia del equipo, downtime y condiciones para recomendar el plan preventivo</div>
+    <div class="ct-toolbar" style="margin:10px 0 14px">
+      <button class="chip chip-on">🤖 Motor PM</button>
+      <button class="chip" onclick="setPmVista('planes')">🔧 Planes creados (${_cache.planes.length})</button>
+      <span style="flex:1"></span>
+      <button class="chip ${_motorFiltro==='sinplan'?'chip-on':''}" onclick="setMotorFiltro('sinplan')">Sin plan (${sinPlan.length})</button>
+      <button class="chip ${_motorFiltro==='todos'?'chip-on':''}" onclick="setMotorFiltro('todos')">Todos (${recs.length})</button>
+    </div>
     <div class="kpi-grid">
       <div class="kpi accent"><div class="k-val">${adfsGen.length}</div><div class="k-lbl">ADF generados</div></div>
       <div class="kpi"><div class="k-val c-rojo">${sinPlan.length}</div><div class="k-lbl">Sin plan PM</div></div>
-      <div class="kpi"><div class="k-val c-verde">${conPlan.length}</div><div class="k-lbl">Con plan PM</div></div>
+      <div class="kpi"><div class="k-val c-rojooscuro">${nAlta}</div><div class="k-lbl">Prioridad alta sin plan</div></div>
+      <div class="kpi"><div class="k-val c-verde">${recs.length-sinPlan.length}</div><div class="k-lbl">Con plan PM</div></div>
     </div>
-    ${sinPlan.length ? `<div class="section-head"><h3>⚠ Requieren plan PM (${sinPlan.length})</h3></div>` : ''}
-    <div class="pm-cards">${cardsSin}</div>
-    ${cardsConHTML}
+    <div class="pm-cards">${cards}</div>
   `;
+}
+
+// Crea el plan PM prellenado con las actividades seleccionadas de la tarjeta
+function crearPlanDesdeMotor(adfId){
+  const r = _motorRec[adfId]; const a = _cache.adfs.find(x=>x.id===adfId);
+  if(!r||!a){ toast('No encontré la recomendación. Actualiza la vista.','err'); return; }
+  const card = $('mot-card-'+adfId);
+  const checks = card ? [...card.querySelectorAll('input[data-mot-idx]')] : [];
+  const seleccion = checks.length ? checks.filter(c=>c.checked).map(c=>r.acts[+c.dataset.motIdx]).filter(Boolean) : r.acts;
+  if(!seleccion.length){ toast('Selecciona al menos una actividad.','err'); return; }
+
+  _openPlanId = '__nuevo__';
+  $('modal-title').textContent = '🤖 Nuevo Plan PM · '+(a.folio||'')+' (recomendado por Motor PM)';
+  $('modal-body').innerHTML = formPlanMP(null);
+  $('modal-detalle').classList.add('open');
+  const sel = $('mp-adf-sel'); if(sel){ sel.value=adfId; }
+  const set=(id,v)=>{ const el=$(id); if(el) el.value=v; };
+  set('mp-equipo', a.equipo||''); set('mp-area', a.area||''); set('mp-modo', a.modoFalla||'');
+  const porques=a.analisis?.porques||[]; set('mp-causa', porques[porques.length-1]||'');
+  set('mp-objetivo', `Prevenir recurrencia de "${a.modoFalla||a.sintoma||'falla'}" en ${a.equipo||'equipo'}`+(r.nRec?` (${r.nRec} falla(s) previa(s))`:''));
+  const listEl=$('mp-acts-list');
+  if(listEl) listEl.innerHTML = seleccion.map((ac,i)=>mpActRowHTML({
+    descripcion:ac.descripcion, tipo:ac.tipo, frecuencia:ac.frecuencia,
+    responsable:'', ultimaEjecucion:'', proximaEjecucion:'',
+  },i)).join('');
 }
 
 function abrirNuevoPlanDesde(adfId){

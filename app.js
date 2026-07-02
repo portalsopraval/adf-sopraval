@@ -993,12 +993,12 @@ function arrancarApp(){
   renderTabs();
   escucharADFs();
   if(esLider() || esVistaPMInd()) escucharPlanesMP();
-  irTab(esVistaPMInd() ? 'mantenimiento' : (esJefatura() ? 'listado' : 'inicio'));
+  irTab(esVistaPMInd() ? 'listado' : (esJefatura() ? 'listado' : 'inicio'));
 }
 
 function renderTabs(){
   if(esVistaPMInd()){
-    const tabs = [['mantenimiento','🔧 Planes PM'],['lamina','📊 Lámina PM'],['confiabilidad','📊 Indicadores']];
+    const tabs = [['listado','📋 ADF Generados'],['mantenimiento','🔧 Planes PM'],['lamina','📊 Lámina PM'],['confiabilidad','📊 Indicadores']];
     $('tabs-nav').innerHTML = tabs.map(([k,l])=>`<button class="tab-btn" data-tab="${k}">${l}</button>`).join('');
     $('tabs-nav').querySelectorAll('.tab-btn').forEach(b=> b.addEventListener('click', ()=>irTab(b.dataset.tab)));
     return;
@@ -1023,7 +1023,7 @@ function renderTabs(){
 
 function irTab(tab){
   if(tab==='confiabilidad' && !esAdmin() && !esVistaPMInd() && !esJefatura()) tab='inicio';
-  if(esVistaPMInd() && !['confiabilidad','mantenimiento','lamina'].includes(tab)) tab='mantenimiento';
+  if(esVistaPMInd() && !['confiabilidad','mantenimiento','lamina','listado'].includes(tab)) tab='listado';
   if(esJefatura() && !['inicio','listado','seguimiento','tiempos','lamina'].includes(tab)) tab='listado';
   _activeTab=tab;
   $('tabs-nav').querySelectorAll('.tab-btn').forEach(b=>
@@ -1061,8 +1061,10 @@ function actualizarBadges(){
   if(p.n>0){ const s=document.createElement('span'); s.className='tab-badge'; s.textContent=p.n; btn.appendChild(s); }
 }
 
+const ESTADOS_GENERADO = ['Aprobado','Seguimiento','PlanAccion','Cerrado'];
 function misADFs(){
-  if(esLider() || esVistaPMInd()) return _cache.adfs;
+  if(esLider()) return _cache.adfs;
+  if(esVistaPMInd()) return _cache.adfs.filter(a=>ESTADOS_GENERADO.includes(a.estado));
   if(esJefatura()) return _cache.adfs.filter(a=> a.jefaturaAsignada && a.jefaturaAsignada.email===CU.email);
   return _cache.adfs.filter(a=> a.creadorId===CU.id || a.creadorEmail===CU.email);
 }
@@ -1165,11 +1167,11 @@ function refrescarListado(){
 
 function renderListado(){
   if(!_cache.cargado){ $('pane-listado').innerHTML=skeletonHTML(); return; }
-  const titulo = esJefatura()?'ADF asignados para validar':(esLider()?'Todos los ADF':'Mis ADF');
+  const titulo = esJefatura()?'ADF asignados para validar':(esVistaPMInd()?'ADF Generados — Disponibles para Planes PM':(esLider()?'Todos los ADF':'Mis ADF'));
   const data=datosListado();
   $('pane-listado').innerHTML = `
     <div class="page-title">${titulo}</div>
-    <div class="page-sub"><span id="lst-count">${data.length}</span> registro(s)${esJefatura()?` · ${misADFs().filter(a=>a.estado==='EnJefatura').length} por validar`:' de análisis de falla'}</div>
+    <div class="page-sub"><span id="lst-count">${data.length}</span> registro(s)${esJefatura()?` · ${misADFs().filter(a=>a.estado==='EnJefatura').length} por validar`:(esVistaPMInd()?' listos para aplicar planes PM':' de análisis de falla')}</div>
     ${esAdmin()?`<div class="imp-bar">
       <button class="btn-ghost btn-sm" onclick="descargarPlantillaADF()">⬇ Plantilla Excel</button>
       <label class="btn-primary btn-sm imp-file">📥 Importar ADF terminados
@@ -1957,7 +1959,7 @@ function estadoPM(a){
 
 // arma los datos de la lámina desde el cache vivo (mismo criterio que Control de Tiempos)
 function laminaData(){
-  const adfs = _cache.adfs.slice().sort((a,b)=>(a.folio||'').localeCompare(b.folio||''));
+  const adfs = misADFs().slice().sort((a,b)=>(a.folio||'').localeCompare(b.folio||''));
   const A = adfs.map(a=>({ nAdf:a.folio||a.id, area:normArea(a.area)||'—', equipo:a.equipo||'—', fecha:fechaCL(a.fechaInicio), status:estadoPM(a) }));
   const today=new Date(); today.setHours(0,0,0,0);
   const grupos=[];
@@ -3889,13 +3891,13 @@ function abrirPlanMP(id){
 function formPlanMP(p){
   const isNew = !p;
   const acts  = p?.actividades || [];
-  const adfs  = _cache.adfs;
+  const adfs  = (esVistaPMInd() ? misADFs() : _cache.adfs).filter(a=>ESTADOS_GENERADO.includes(a.estado));
   return `
     ${isNew ? `
     <div class="field">
       <label>ADF de origen *</label>
       <select id="mp-adf-sel">
-        <option value="">-- Seleccionar ADF para auto-completar --</option>
+        <option value="">-- Seleccionar ADF generado --</option>
         ${adfs.map(a=>`<option value="${a.id}">${esc(a.folio||'S/F')} · ${esc(a.equipo||'—')} · ${esc(a.area||'')}</option>`).join('')}
       </select>
     </div>` :

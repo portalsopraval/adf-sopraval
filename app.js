@@ -2175,7 +2175,11 @@ function _pmPick(obj, alias){
   for(const a of alias){ for(const k of keys){ if(_pmNorm(k).indexOf(_pmNorm(a))>=0) return obj[k]; } }
   return '';
 }
-function _pmFecha(v){ if(typeof ADFImport!=='undefined' && ADFImport._parseFecha){ const f=ADFImport._parseFecha(v); if(f) return f; } return String(v||''); }
+function _pmFecha(v){
+  if(v instanceof Date){ const y=v.getFullYear(),m=v.getMonth()+1,d=v.getDate(); return y+'-'+('0'+m).slice(-2)+'-'+('0'+d).slice(-2); }
+  if(typeof ADFImport!=='undefined' && ADFImport._parseFecha){ const f=ADFImport._parseFecha(v); if(f) return f; }
+  return String(v||'');
+}
 function _pmEstado(st){ const n=_pmNorm(st); if(n.indexOf('gener')>=0||n.indexOf('termin')>=0) return 'Aprobado'; if(n.indexOf('proce')>=0) return 'EnJefatura'; return 'PorVerificar'; }
 
 function _pmMapADF(f){
@@ -2314,8 +2318,8 @@ async function procesarImportPM(){
       enProceso:registros.filter(r=>r.estado==='EnJefatura').length,
       pendientes:registros.filter(r=>r.estado==='PorVerificar').length,
       planesAprobados:planes.filter(p=>p.estadoPlan==='aprobado').length,
-      planesAtrasados:planes.filter(p=>p.estadoPlan==='atrasado').length,
-      planesProceso:planes.filter(p=>p.estadoPlan==='proceso').length }};
+      planesAtrasados:(()=>{ const hoy=new Date(); hoy.setHours(0,0,0,0); return planes.filter(p=>p.estadoPlan!=='aprobado'&&p.fCompr&&new Date(p.fCompr+'T00:00:00')<hoy).length; })(),
+      planesProceso:(()=>{ const hoy=new Date(); hoy.setHours(0,0,0,0); return planes.filter(p=>p.estadoPlan!=='aprobado'&&!(p.fCompr&&new Date(p.fCompr+'T00:00:00')<hoy)).length; })() }};
     mostrarPreviewPM(data);
   }catch(e){ toast('Error al leer: '+e.message,'err'); }
 }
@@ -2345,7 +2349,7 @@ function mostrarPreviewPM(data){
       <div class="sp-kpis" style="margin-top:6px;border-top:1px solid var(--border);padding-top:6px">
         <span style="font-size:.8rem;color:var(--muted)">Planes:</span>
         <span class="c-verde"><b>${m.planesAprobados}</b> ✅ aprobados</span>
-        <span class="c-rojo"><b>${m.planesAtrasados}</b> 🔴 atrasados</span>
+        <span class="c-rojo"><b>${m.planesAtrasados}</b> 🔴 atrasados (fecha vencida)</span>
         <span class="c-ambar"><b>${m.planesProceso}</b> 🟡 en proceso</span>
         <span><b>${m.nPlanes}</b> total en <b>${m.adfConPlanes}</b> ADF</span>
       </div>

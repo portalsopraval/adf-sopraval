@@ -2228,18 +2228,61 @@ async function _pmLeerTodasHojas(file, hojaExcluir){
   return filas;
 }
 
+// Lee la hoja VERT del Excel de Seguimiento y extrae ADFs únicos + todos sus planes
+async function _pmLeerVert(file){
+  const buf=await file.arrayBuffer();
+  const wb=XLSX.read(buf,{type:'array'});
+  // Priorizar hoja con "VERT" en el nombre, luego cualquiera con "accion"
+  const vertName=wb.SheetNames.find(n=>/vert/i.test(n))
+    ||wb.SheetNames.find(n=>/accion|plan/i.test(n))
+    ||wb.SheetNames[0];
+  const filas=XLSX.utils.sheet_to_json(wb.Sheets[vertName],{defval:''});
+  const adfMap=new Map();
+  const planes=[];
+  filas.forEach(f=>{
+    // Número ADF: columna "N° ADF" — extrae solo dígitos
+    const numRaw=_pmPick(f,['n° adf','n adf','numero adf','n.adf','nro adf','adf n°','adf num','n.° adf']);
+    const num=parseInt(String(numRaw).replace(/\D/g,''),10);
+    if(!num) return;
+    const folio='ADF-'+String(num).padStart(4,'0');
+    if(!adfMap.has(num)){
+      adfMap.set(num,{
+        spId:num, folio,
+        equipo:_pmPick(f,['equipo','maquina'])||'',
+        area:_pmPick(f,['area'])||'',
+        sintoma:_pmPick(f,['sintoma','descripcion averia','descripcion'])||'',
+        fecha:_pmFecha(_pmPick(f,['fecha averia','fecha avería','fecha de averia','fecha averia'])),
+        statusRaw:_pmPick(f,['status','estado'])||'',
+        estado:_pmEstado(_pmPick(f,['status','estado'])),
+        responsable:_pmPick(f,['responsable'])||'',
+        codSap:String(_pmPick(f,['n° sap equipo','n° sap','sap equipo','sap','cod sap'])||'').trim()
+      });
+    }
+    const plan=_pmPick(f,['planes accion','planes acción','plan de accion','plan accion','solucion','solución','actividad'])||'';
+    if(plan){
+      const tipoRaw=(_pmPick(f,['tipo solucion','tipo solución','tipo'])||'').toLowerCase();
+      const tipo=tipoRaw.indexOf('inmed')>=0?'INMEDIATA':'PERMANENTE';
+      planes.push({
+        adf:num, plan,
+        responsable:_pmPick(f,['responsable'])||'',
+        fCompr:_pmFecha(_pmPick(f,['fecha compr','fecha compromiso','compromiso','plazo'])),
+        tipo
+      });
+    }
+  });
+  return { registros:[...adfMap.values()], planes, hoja:vertName };
+}
+
 function abrirImportarPM(){
   if(!esAdmin()){ toast('Solo administradores.','err'); return; }
-  $('modal-title').textContent='📥 Importar desde exportación de SharePoint';
+  $('modal-title').textContent='📥 Importar Seguimiento de Planes de Acción';
   $('modal-body').innerHTML=`
     <div class="sp-pre">
-      <p>Subí los dos archivos exportados de SharePoint. El portal los previsualiza antes de sembrar.</p>
-      <ol>
-        <li><b>Lista ADF</b> (Excel/CSV): lista <code>ADF_Solicitudes</code> → <i>Exportar a Excel/CSV</i>. <span class="muted">La vista debe incluir la columna <b>ID</b> (enlaza los planes con cada ADF).</span></li>
-        <li><b>Excel de planes</b>: <code>Seguimiento Planes Acción ADF.xlsx</code> (hoja <code>P. ACCION VERT</code>) — opcional.</li>
-      </ol>
-      <div class="field"><label>1 · Lista ADF (export)</label><input type="file" id="pm-file-adf" accept=".xlsx,.xls,.csv"></div>
-      <div class="field"><label>2 · Excel de planes (opcional)</label><input type="file" id="pm-file-planes" accept=".xlsx,.xls"></div>
+      <p>Sube el archivo <b>Seguimiento Planes Acción ADF.xlsx</b> (hoja <code>P. ACCION VERT</code>).<br>
+      El portal lee el N° ADF de cada fila y agrupa todos los planes automáticamente.</p>
+      <div class="field"><label>📂 Seguimiento Planes Acción ADF.xlsx</label>
+        <input type="file" id="pm-file-adf" accept=".xlsx,.xls">
+      </div>
       <div class="sp-actions">
         <button class="btn-secondary" id="pm-cancel">Cancelar</button>
         <button class="btn-primary" id="pm-procesar">Procesar y previsualizar</button>
@@ -2251,43 +2294,19 @@ function abrirImportarPM(){
 }
 
 async function procesarImportPM(){
-  const fAdf=$('pm-file-adf').files[0], fPlanes=$('pm-file-planes').files[0];
-  if(!fAdf){ toast('Falta el archivo de la lista ADF.','err'); return; }
-  toast('Leyendo archivos…','info');
+  const fAdf=$('pm-file-adf').files[0];
+  if(!fAdf){ toast('Selecciona el archivo Excel.','err'); return; }
+  toast('Leyendo archivo…','info');
   try{
-    const filasADF=await _pmLeerFilas(fAdf);
-    const registros=filasADF.map(_pmMapADF).filter(r=>r.equipo||r.sintoma);
-    if(!registros.length){ toast('No reconocí filas de ADF (revisa que el export tenga encabezados y la columna ID).','err'); return; }
-
-    let planes=[];
-    // Fuente 1: archivo de planes separado
-    if(fPlanes){
-      const fp=await _pmLeerFilas(fPlanes,/p\.?\s*accion|accion vert|planes|seguimiento/i);
-      const dePlanes=fp.map(_pmMapPlan).filter(p=>p&&p.adf&&p.plan);
-      planes.push(...dePlanes);
-    }
-    // Fuente 2: hojas adicionales del mismo archivo ADF (hoja 2, 3…)
-    if(!planes.length){
-      const otrasFilas=await _pmLeerTodasHojas(fAdf, filasADF._hoja||'');
-      const dePlanes=otrasFilas.map(_pmMapPlan).filter(p=>p&&p.adf&&p.plan);
-      planes.push(...dePlanes);
-    }
-    // Fuente 3: columna de plan inline en cada fila ADF
-    if(!planes.length){
-      registros.forEach(r=>{
-        if(r.planInline){
-          const num=parseInt(String(r.spId).replace(/\D/g,''),10);
-          if(num) planes.push({adf:num, plan:r.planInline, responsable:r.planResp||r.responsable||'', fCompr:r.planFecha||''});
-        }
-      });
-    }
-    // Calcular qué ADFs tienen planes asociados (para diagnóstico)
-    const planesPorAdfIdx={};
-    planes.forEach(p=>{ if(p.adf){ (planesPorAdfIdx[p.adf]=planesPorAdfIdx[p.adf]||[]).push(p); } });
-    const adfConPlanes=registros.filter(r=>{ const n=parseInt(String(r.spId).replace(/\D/g,''),10); return n && planesPorAdfIdx[n]?.length; });
+    const { registros, planes, hoja } = await _pmLeerVert(fAdf);
+    if(!registros.length){ toast(`No encontré filas con N° ADF en la hoja "${hoja}". Revisa que la columna se llame "N° ADF".`,'err'); return; }
+    // Índice de planes por ADF para diagnóstico
+    const idx={};
+    planes.forEach(p=>{ if(p.adf){ (idx[p.adf]=idx[p.adf]||[]).push(p); } });
+    const adfConPlanes=registros.filter(r=>idx[r.spId]?.length);
     const data={ registros, planes, meta:{
-      nADF:registros.length, nPlanes:planes.length,
-      adfConPlanes:adfConPlanes.length,
+      nADF:registros.length, nPlanes:planes.length, adfConPlanes:adfConPlanes.length,
+      hoja,
       generados:registros.filter(r=>r.estado==='Aprobado').length,
       enProceso:registros.filter(r=>r.estado==='EnJefatura').length,
       pendientes:registros.filter(r=>r.estado==='PorVerificar').length }};
@@ -2305,10 +2324,10 @@ function mostrarPreviewPM(data){
     return `<tr><td>${esc(r.folio)}</td><td>${esc(normArea(r.area))}</td><td>${esc((r.equipo||'').slice(0,38))}</td><td>${esc(PM_STATUS_LABEL[r.estado]||r.estado)}</td><td style="text-align:center">${nP?`<b class="c-verde">${nP}</b>`:'<span class="muted">—</span>'}</td></tr>`;
   }).join('');
   const alertaPlanes = m.nPlanes===0
-    ? `<div class="alerta-recurrencia" style="margin-bottom:10px">⚠ No se detectaron planes de acción. Si tienes el Excel de planes, súbelo en el campo opcional.<br><b>Si los planes están en columnas del mismo Excel</b> (ej: columna "Plan de Acción"), revisa que el encabezado contenga las palabras "plan" o "accion".</div>`
-    : `<div style="color:var(--green);font-size:.85rem;margin-bottom:8px">✅ ${m.nPlanes} plan(es) detectado(s) en ${m.adfConPlanes} de ${m.nADF} ADF</div>`;
+    ? `<div class="alerta-recurrencia" style="margin-bottom:10px">⚠ No se detectaron planes. Verifica que la columna del plan se llame <b>"Planes Accion"</b> y la del ADF <b>"N° ADF"</b> en la hoja <b>${esc(m.hoja||'')}</b>.</div>`
+    : `<div style="color:var(--green);font-size:.85rem;margin-bottom:8px">✅ Hoja <b>${esc(m.hoja||'')}</b> · ${m.nPlanes} plan(es) en ${m.adfConPlanes} ADF</div>`;
   window._pmData=data;
-  $('modal-title').textContent='👁 Previsualización — Exportación SharePoint';
+  $('modal-title').textContent='👁 Previsualización — Seguimiento Planes Acción';
   $('modal-body').innerHTML=`
     <div class="sp-pre">
       <div class="sp-kpis">
@@ -2342,9 +2361,9 @@ async function sembrarPM(data){
   try{
     for(const r of data.registros){
       const num=parseInt(String(r.spId).replace(/\D/g,''),10);
-      const planes=(planesPorAdf[num]||[]).map(p=>({ actividad:p.plan, tipo:'PERMANENTE', responsable:p.responsable||'', fecha:p.fCompr||'' }));
-      let areaR=r.area||'', lineaR=r.linea||'', sapR='';
-      const mq=inferirMaquina(r.equipo); if(mq){ areaR=mq.area||areaR; lineaR=mq.linea||lineaR; sapR=mq.sap||''; }
+      const planes=(planesPorAdf[num]||[]).map(p=>({ actividad:p.plan, tipo:p.tipo||'PERMANENTE', responsable:p.responsable||'', fecha:p.fCompr||'' }));
+      let areaR=r.area||'', lineaR=r.linea||'', sapR=r.codSap||'';
+      const mq=inferirMaquina(r.equipo); if(mq){ areaR=mq.area||areaR; lineaR=mq.linea||lineaR; sapR=sapR||mq.sap||''; }
       areaR=normArea(areaR);
       const ref=fdb.collection(COL_ADF).doc(r.folio);
       const snap=await ref.get();

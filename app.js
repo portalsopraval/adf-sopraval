@@ -1713,13 +1713,12 @@ function renderSeguimiento(){
 /* ═══════════════════════════════════════════════════════════
    CONTROL DE TIEMPOS (semáforo por plan de acción)
    ═══════════════════════════════════════════════════════════ */
-function renderTiempos(){
-  if(!_cache.cargado){ $('pane-tiempos').innerHTML=skeletonHTML(); return; }
-  const today = new Date(); today.setHours(0,0,0,0);
-  const activos = misADFs().filter(a=>['Aprobado','Seguimiento','PlanAccion'].includes(a.estado));
+let _tiemposFiltro = 'activos'; // 'activos' | 'todos'
 
+function calcRows(adfs){
+  const today = new Date(); today.setHours(0,0,0,0);
   const rows = [];
-  for(const a of activos){
+  for(const a of adfs){
     const planes = a.analisis?.planes || [];
     const seg = a.seguimiento || [];
     planes.forEach((pl,i)=>{
@@ -1729,33 +1728,97 @@ function renderTiempos(){
       const creado = new Date(a.createdAt); creado.setHours(0,0,0,0);
       const totalDias = Math.max(1, Math.round((fechaComp-creado)/86400000));
       const transcurrido = Math.round((today-creado)/86400000);
-      const diasRest = Math.round((fechaComp-today)/86400000); // >0 faltan · 0 vence hoy · <0 vencido
-      let pct = Math.round(transcurrido/totalDias*100);
-      if(pct<0) pct=0;
+      const diasRest = Math.round((fechaComp-today)/86400000);
+      let pct = Math.round(transcurrido/totalDias*100); if(pct<0) pct=0;
       let semaforo, semCls, estadoTiempo, statusPlan;
       if(s.planAprobado){ statusPlan='Aprobado'; semaforo='🟢'; semCls='sem-done'; estadoTiempo='Aprobado'; pct=100; }
       else if(s.porValidar){ statusPlan='PorValidar'; semaforo='🔵'; semCls='sem-validar'; estadoTiempo='Por validar'; pct=Math.max(pct,100); }
-      else if(diasRest<0){ statusPlan='Atrasado'; semaforo='🔴'; semCls='sem-over'; estadoTiempo=`Atrasado (${Math.abs(diasRest)} día(s))`; pct=100; }
-      else { statusPlan='EnProceso'; semaforo='🟡'; semCls='sem-warn'; estadoTiempo=`En proceso (faltan ${diasRest} día(s))`; }
-      rows.push({ a, i, pl, s, pct, transcurrido, diasRest, totalDias, semaforo, semCls, estadoTiempo, statusPlan });
+      else if(diasRest<0){ statusPlan='Atrasado'; semaforo='🔴'; semCls='sem-over'; estadoTiempo=`Atrasado ${Math.abs(diasRest)}d`; pct=100; }
+      else if(diasRest===0){ statusPlan='Atrasado'; semaforo='🔴'; semCls='sem-over'; estadoTiempo='Vence hoy'; pct=100; }
+      else { statusPlan='EnProceso'; semaforo='🟡'; semCls='sem-warn'; estadoTiempo=`Faltan ${diasRest}d`; }
+      rows.push({ a, i, pl, s, pct, diasRest, semaforo, semCls, estadoTiempo, statusPlan });
     });
   }
-  // Orden: atrasados arriba; aprobados al final
-  rows.sort((a,b)=> (a.s.planAprobado?1:0)-(b.s.planAprobado?1:0) || a.diasRest-b.diasRest);
-  const nVencidos = rows.filter(r=>r.statusPlan==='Atrasado').length;
+  return rows;
+}
+
+function renderTiempos(){
+  if(!_cache.cargado){ $('pane-tiempos').innerHTML=skeletonHTML(); return; }
+  const activos = misADFs().filter(a=>['Aprobado','Seguimiento','PlanAccion'].includes(a.estado));
+  const allRows = calcRows(activos);
+  const nAtrasados = allRows.filter(r=>r.statusPlan==='Atrasado').length;
+  const nPorValidar = allRows.filter(r=>r.statusPlan==='PorValidar').length;
+  const nEnProceso  = allRows.filter(r=>r.statusPlan==='EnProceso').length;
+  const nAprobados  = allRows.filter(r=>r.statusPlan==='Aprobado').length;
+
+  const rows = _tiemposFiltro==='activos' ? allRows.filter(r=>r.statusPlan!=='Aprobado') : allRows;
+
+  // Agrupar por ADF
+  const grupos = [];
+  for(const r of rows){
+    let g = grupos.find(g=>g.adfId===r.a.id);
+    if(!g){ g={adfId:r.a.id, a:r.a, rows:[]}; grupos.push(g); }
+    g.rows.push(r);
+  }
+  // Ordenar grupos: primero los que tienen atrasados, luego por diasRest
+  grupos.sort((ga,gb)=>{
+    const aAt = ga.rows.some(r=>r.statusPlan==='Atrasado') ? 0 : 1;
+    const bAt = gb.rows.some(r=>r.statusPlan==='Atrasado') ? 0 : 1;
+    if(aAt!==bAt) return aAt-bAt;
+    return Math.min(...ga.rows.map(r=>r.diasRest)) - Math.min(...gb.rows.map(r=>r.diasRest));
+  });
 
   $('pane-tiempos').innerHTML = `
     <div class="page-title">⏱ Control de Tiempos</div>
-    <div class="page-sub">Planes de acción con fecha compromiso — ${rows.length} item(s) activo(s)</div>
-    ${nVencidos ? `<div class="alerta-vencidos">🔴 <b>${nVencidos}</b> plan(es) de acción <b>atrasado(s)</b>. Requieren atención inmediata.</div>` : ''}
-    <div class="tiempos-leyenda">
-      <span>🟡 En proceso</span>
-      <span>🔴 Atrasado (vencido)</span>
-      <span>🔵 Por validar (evidencia enviada)</span>
-      <span>🟢 Aprobado</span>
+    <div class="page-sub">Planes de acción · ${activos.length} ADF activo(s)</div>
+
+    <div class="ct-kpis">
+      <div class="ct-kpi ct-kpi-red"><div class="ct-kval">${nAtrasados}</div><div class="ct-klbl">🔴 Atrasados</div></div>
+      <div class="ct-kpi ct-kpi-yel"><div class="ct-kval">${nEnProceso}</div><div class="ct-klbl">🟡 En proceso</div></div>
+      <div class="ct-kpi ct-kpi-blu"><div class="ct-kval">${nPorValidar}</div><div class="ct-klbl">🔵 Por validar</div></div>
+      <div class="ct-kpi ct-kpi-grn"><div class="ct-kval">${nAprobados}</div><div class="ct-klbl">🟢 Aprobados</div></div>
     </div>
-    ${rows.length ? tiemposTabla(rows) : `<div class="empty"><div class="e-icon">⏱</div>No hay planes de acción en seguimiento (el ADF debe estar aprobado por jefatura).</div>`}
+
+    ${nAtrasados ? `<div class="alerta-vencidos">🔴 <b>${nAtrasados}</b> plan(es) <b>atrasado(s)</b> — requieren atención inmediata.</div>` : ''}
+
+    <div class="ct-toolbar">
+      <button class="chip ${_tiemposFiltro==='activos'?'chip-on':''}" onclick="setTiemposFiltro('activos')">Solo activos</button>
+      <button class="chip ${_tiemposFiltro==='todos'?'chip-on':''}" onclick="setTiemposFiltro('todos')">Incluir aprobados</button>
+      <span class="muted" style="margin-left:auto;font-size:.8rem">${rows.length} plan(es) mostrado(s)</span>
+    </div>
+
+    ${grupos.length ? grupos.map(g=>tiemposGrupo(g)).join('') : `<div class="empty"><div class="e-icon">⏱</div>Sin planes activos${_tiemposFiltro==='activos'?' (todos aprobados ✅)':''}.</div>`}
   `;
+}
+
+function setTiemposFiltro(v){ _tiemposFiltro=v; renderTiempos(); }
+
+function tiemposGrupo(g){
+  const a = g.a;
+  const nAt  = g.rows.filter(r=>r.statusPlan==='Atrasado').length;
+  const nPV  = g.rows.filter(r=>r.statusPlan==='PorValidar').length;
+  const nOk  = g.rows.filter(r=>r.statusPlan==='Aprobado').length;
+  const nEP  = g.rows.filter(r=>r.statusPlan==='EnProceso').length;
+  const puntosCls = nAt?'grp-at':nPV?'grp-pv':nOk===g.rows.length?'grp-ok':'grp-ep';
+  const badges = [
+    nAt  ? `<span class="ct-badge ct-b-red">${nAt} atrasado${nAt>1?'s':''}</span>` : '',
+    nPV  ? `<span class="ct-badge ct-b-blu">${nPV} por validar</span>` : '',
+    nEP  ? `<span class="ct-badge ct-b-yel">${nEP} en proceso</span>` : '',
+    nOk  ? `<span class="ct-badge ct-b-grn">${nOk} aprobado${nOk>1?'s':''}</span>` : '',
+  ].join('');
+  return `
+  <div class="ct-grupo">
+    <div class="ct-grp-head ${puntosCls}" onclick="this.parentElement.classList.toggle('ct-collapsed')">
+      <span class="ct-grp-arrow">▼</span>
+      <b>${esc(a.folio||'—')}</b>
+      <span class="ct-grp-eq">${esc(a.equipo||'—')}</span>
+      <span class="ct-grp-area">${esc(a.area||'—')}</span>
+      ${badges}
+    </div>
+    <div class="ct-grp-body">
+      ${g.rows.map(r=>tiemposFila(r)).join('')}
+    </div>
+  </div>`;
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -2145,48 +2208,48 @@ async function sembrarPM(data){
   }catch(e){ toast('Error al sembrar: '+e.message,'err'); if($('pm-sembrar')) $('pm-sembrar').disabled=false; }
 }
 
-function tiemposTabla(rows){
-  return `<div class="tbl-wrap"><table class="data">
-    <thead><tr>
-      <th>Folio</th><th>Equipo</th><th>Actividad (plan)</th>
-      <th>Responsable</th><th>F. Compromiso</th><th>Status</th>
-      <th>Avance</th><th>Evidencia</th><th>Acción</th>
-    </tr></thead>
-    <tbody>
-      ${rows.map(r=>{
-        const owner = r.a.creadorId===CU.id || r.a.creadorEmail===CU.email;
-        const validador = esAdmin() || esLider() || (esJefatura() && r.a.jefaturaAsignada && r.a.jefaturaAsignada.email===CU.email);
-        let accion='';
-        if(r.s.planAprobado){ accion='<span class="sem-done" style="font-weight:700">✅ Aprobado</span>'; }
-        else if(r.s.porValidar){
-          accion = validador
-            ? `<button class="btn-green btn-sm" onclick="aprobarPlan('${r.a.id}',${r.i})">✓ Aprobar</button> <button class="btn-danger btn-sm" onclick="rechazarPlan('${r.a.id}',${r.i})">↩ Rechazar</button>`
-            : '<span class="muted">⏳ En validación</span>';
-        } else {
-          accion = (owner||validador)
-            ? `<button class="btn-primary btn-sm" onclick="enviarAValidar('${r.a.id}',${r.i})">📨 Enviar a validar</button>${r.s.respaldo?'':'<div class="muted" style="font-size:.72rem">requiere evidencia</div>'}`
-            : '<span class="muted">—</span>';
-        }
-        return `<tr class="${r.s.planAprobado?'row-done':''}">
-        <td class="nowrap"><b>${esc(r.a.folio||'—')}</b></td>
-        <td>${esc(r.a.equipo||'—')}</td>
-        <td style="max-width:220px">${esc(r.pl.actividad)}</td>
-        <td>${esc(r.pl.responsable||'—')}</td>
-        <td class="nowrap">${fmtD(r.pl.fecha)}</td>
-        <td class="nowrap"><span class="plazo-tag ${r.semCls}">${r.semaforo} ${esc(r.estadoTiempo)}</span></td>
-        <td class="avance-cell">
-          <div class="avance-bar"><div class="avance-fill ${r.semCls}" style="width:${Math.min(100,r.pct)}%"></div></div>
-          <span class="avance-pct">${r.pct}%</span>
-        </td>
-        <td style="text-align:center" class="nowrap">
-          ${r.s.respaldo?`<a class="resp-link" onclick="verRespaldo('${r.a.id}',${r.i})" title="${esc(r.s.respaldo.name||'respaldo')}">📎 Ver</a><br>`:''}
-          ${r.s.planAprobado?'':`<button class="btn-ghost btn-sm" onclick="document.getElementById('resp-${r.a.id}-${r.i}').click()">${r.s.respaldo?'Cambiar':'➕ Adjuntar'}</button>
-          <input type="file" id="resp-${r.a.id}-${r.i}" class="hidden" accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.txt" onchange="subirRespaldo('${r.a.id}',${r.i},this)">`}
-        </td>
-        <td style="text-align:center" class="nowrap">${accion}</td>
-      </tr>`;}).join('')}
-    </tbody>
-  </table></div>`;
+function tiemposTabla(rows){ return rows.map(r=>tiemposFila(r)).join(''); } // compatibilidad con llamadas externas
+
+function tiemposFila(r){
+  const owner = r.a.creadorId===CU.id || r.a.creadorEmail===CU.email;
+  const validador = esAdmin() || esLider() || (esJefatura() && r.a.jefaturaAsignada && r.a.jefaturaAsignada.email===CU.email);
+  let accionHTML='';
+  if(r.s.planAprobado){
+    accionHTML=`<span class="ct-aprobado">✅ Aprobado${r.s.aprobadoPor?' · '+esc(r.s.aprobadoPor):''}</span>`;
+  } else if(r.s.porValidar){
+    accionHTML = validador
+      ? `<button class="btn-green btn-sm" onclick="aprobarPlan('${r.a.id}',${r.i})">✓ Aprobar</button> <button class="btn-danger btn-sm" onclick="rechazarPlan('${r.a.id}',${r.i})">↩ Rechazar</button>`
+      : '<span class="muted">⏳ En validación</span>';
+  } else {
+    accionHTML = (owner||validador)
+      ? `<button class="btn-primary btn-sm" onclick="enviarAValidar('${r.a.id}',${r.i})">📨 Enviar a validar</button>${r.s.respaldo?'':'<div class="muted" style="font-size:.72rem;margin-top:3px">adjuntar evidencia primero</div>'}`
+      : '<span class="muted">—</span>';
+  }
+  const respHTML = r.s.planAprobado ? '' : `
+    <div class="ct-evid">
+      ${r.s.respaldo?`<a class="resp-link" onclick="verRespaldo('${r.a.id}',${r.i})">📎 ${esc(r.s.respaldo.name||'Ver evidencia')}</a>`:'<span class="muted">Sin evidencia</span>'}
+      <button class="btn-ghost btn-sm" onclick="document.getElementById('resp-${r.a.id}-${r.i}').click()">${r.s.respaldo?'Cambiar':'➕ Adjuntar'}</button>
+      <input type="file" id="resp-${r.a.id}-${r.i}" class="hidden" accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.txt" onchange="subirRespaldo('${r.a.id}',${r.i},this)">
+    </div>`;
+  return `
+  <div class="ct-fila ${r.s.planAprobado?'ct-fila-ok':r.statusPlan==='Atrasado'?'ct-fila-at':''}">
+    <div class="ct-fila-main">
+      <div class="ct-fila-act">${esc(r.pl.actividad)}</div>
+      <div class="ct-fila-meta">
+        ${r.pl.responsable?`<span>👤 ${esc(r.pl.responsable)}</span>`:''}
+        <span>📅 ${fmtD(r.pl.fecha)}</span>
+        <span class="plazo-tag ${r.semCls}">${r.semaforo} ${esc(r.estadoTiempo)}</span>
+      </div>
+      <div class="avance-cell" style="margin-top:8px">
+        <div class="avance-bar"><div class="avance-fill ${r.semCls}" style="width:${Math.min(100,r.pct)}%"></div></div>
+        <span class="avance-pct">${r.pct}%</span>
+      </div>
+    </div>
+    <div class="ct-fila-actions">
+      ${respHTML}
+      <div class="ct-accion">${accionHTML}</div>
+    </div>
+  </div>`;
 }
 
 async function concluirPlan(adfId, planIdx, checked){

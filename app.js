@@ -2112,7 +2112,7 @@ async function renderLamina(){
         <div class="lam-kpi"><div class="lam-kpi-l">Atrasados</div><div class="lam-kpi-v c-rojooscuro">${nAtras}</div></div>
         <div class="lam-kpi"><div class="lam-kpi-l">En proceso</div><div class="lam-kpi-v c-ambar">${nEnProc}</div></div>
       </div>
-      <div class="ct-toolbar" style="margin:8px 0 6px">${lamChips}</div>
+      <div class="ct-toolbar" style="padding:0 22px;margin:6px 0 4px">${lamChips}</div>
       <div class="lam-tbl">
         <div class="lam-thead"><span>Estado</span><span>Plan de acción</span><span>Responsable</span><span>Compromiso</span></div>
         ${tablaHTML}

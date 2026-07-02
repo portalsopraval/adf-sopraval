@@ -2178,6 +2178,10 @@ function _pmEstado(st){ const n=_pmNorm(st); if(n.indexOf('gener')>=0||n.indexOf
 
 function _pmMapADF(f){
   const idNum = _pmPick(f,['id']);
+  // También extrae plan inline si existe columna de plan en la fila del ADF
+  const planInline = _pmPick(f,['plan de accion','planes accion','plan accion','accion correctiva','accion','plan correctivo','planes de accion','plan'])||'';
+  const resp = _pmPick(f,['responsable plan','responsable accion','responsable'])||'';
+  const fCompr = _pmFecha(_pmPick(f,['fecha compromiso','fecha compr','compromiso','plazo','fecha limite']));
   return {
     spId:idNum, folio:'ADF-'+String(idNum).replace(/\D/g,'').padStart(4,'0'),
     fecha:_pmFecha(_pmPick(f,['fecha averia','fecha_averia','fecha de averia','fecha'])),
@@ -2186,17 +2190,21 @@ function _pmMapADF(f){
     equipo:_pmPick(f,['equipo','maquina'])||'',
     minutosPerdidos:_pmPick(f,['minutos','detencion'])||'',
     sintoma:_pmPick(f,['descripcion','averia'])||'',
-    responsable:_pmPick(f,['responsable'])||'',
-    estado:_pmEstado(_pmPick(f,['status','estado']))
+    responsable:resp,
+    estado:_pmEstado(_pmPick(f,['status','estado'])),
+    planInline, planResp:resp, planFecha:fCompr
   };
 }
 function _pmMapPlan(r){
-  const adfNum=_pmPick(r,['n adf','n° adf','nro adf','adf']);
+  // Acepta múltiples variantes del encabezado para N° ADF
+  const adfNum=_pmPick(r,['n adf','n° adf','n.adf','n.° adf','num adf','numero adf','nro adf','adf n','adf num','adf n°','adf numero','n de adf','adf','id adf','folio']);
+  // Acepta múltiples variantes del encabezado para plan de acción
+  const plan=_pmPick(r,['planes accion','plan de accion','plan accion','planes de accion','accion correctiva','accion correctiva propuesta','accion','actividad','planes','plan correctivo','descripcion plan','plan','medida correctiva','solucion'])||'';
   return {
     adf:parseInt(String(adfNum).replace(/\D/g,''),10)||null,
-    plan:_pmPick(r,['planes accion','plan de accion','planes','actividad'])||'',
-    responsable:_pmPick(r,['responsable'])||'',
-    fCompr:_pmFecha(_pmPick(r,['fecha compr','fecha compromiso','compromiso']))
+    plan,
+    responsable:_pmPick(r,['responsable','a cargo','ejecutor','responsable plan'])||'',
+    fCompr:_pmFecha(_pmPick(r,['fecha compr','fecha compromiso','compromiso','plazo','fecha limite','f. compromiso','f compromiso','fecha cierre']))
   };
 }
 
@@ -2207,6 +2215,15 @@ async function _pmLeerFilas(file, hojaRe){
   let hoja=wb.SheetNames[0];
   if(hojaRe){ const h=wb.SheetNames.find(n=>hojaRe.test(n)); if(h) hoja=h; }
   return XLSX.utils.sheet_to_json(wb.Sheets[hoja], { defval:'' });
+}
+// Lee TODAS las hojas de un workbook que no sean la ADF list (para buscar planes)
+async function _pmLeerTodasHojas(file, hojaExcluir){
+  const buf=await file.arrayBuffer();
+  const wb=XLSX.read(buf,{type:'array'});
+  const sheets=wb.SheetNames.filter(n=>n!==hojaExcluir);
+  const filas=[];
+  sheets.forEach(s=>{ filas.push(...XLSX.utils.sheet_to_json(wb.Sheets[s],{defval:''})); });
+  return filas;
 }
 
 function abrirImportarPM(){
@@ -2238,11 +2255,37 @@ async function procesarImportPM(){
   try{
     const filasADF=await _pmLeerFilas(fAdf);
     const registros=filasADF.map(_pmMapADF).filter(r=>r.equipo||r.sintoma);
-    let planes=[];
-    if(fPlanes){ const fp=await _pmLeerFilas(fPlanes,/p\.?\s*accion|accion vert|planes/i); planes=fp.map(_pmMapPlan).filter(p=>p&&p.adf&&p.plan); }
     if(!registros.length){ toast('No reconocí filas de ADF (revisa que el export tenga encabezados y la columna ID).','err'); return; }
+
+    let planes=[];
+    // Fuente 1: archivo de planes separado
+    if(fPlanes){
+      const fp=await _pmLeerFilas(fPlanes,/p\.?\s*accion|accion vert|planes|seguimiento/i);
+      const dePlanes=fp.map(_pmMapPlan).filter(p=>p&&p.adf&&p.plan);
+      planes.push(...dePlanes);
+    }
+    // Fuente 2: hojas adicionales del mismo archivo ADF (hoja 2, 3…)
+    if(!planes.length){
+      const otrasFilas=await _pmLeerTodasHojas(fAdf, filasADF._hoja||'');
+      const dePlanes=otrasFilas.map(_pmMapPlan).filter(p=>p&&p.adf&&p.plan);
+      planes.push(...dePlanes);
+    }
+    // Fuente 3: columna de plan inline en cada fila ADF
+    if(!planes.length){
+      registros.forEach(r=>{
+        if(r.planInline){
+          const num=parseInt(String(r.spId).replace(/\D/g,''),10);
+          if(num) planes.push({adf:num, plan:r.planInline, responsable:r.planResp||r.responsable||'', fCompr:r.planFecha||''});
+        }
+      });
+    }
+    // Calcular qué ADFs tienen planes asociados (para diagnóstico)
+    const planesPorAdfIdx={};
+    planes.forEach(p=>{ if(p.adf){ (planesPorAdfIdx[p.adf]=planesPorAdfIdx[p.adf]||[]).push(p); } });
+    const adfConPlanes=registros.filter(r=>{ const n=parseInt(String(r.spId).replace(/\D/g,''),10); return n && planesPorAdfIdx[n]?.length; });
     const data={ registros, planes, meta:{
       nADF:registros.length, nPlanes:planes.length,
+      adfConPlanes:adfConPlanes.length,
       generados:registros.filter(r=>r.estado==='Aprobado').length,
       enProceso:registros.filter(r=>r.estado==='EnJefatura').length,
       pendientes:registros.filter(r=>r.estado==='PorVerificar').length }};
@@ -2252,7 +2295,16 @@ async function procesarImportPM(){
 
 function mostrarPreviewPM(data){
   const m=data.meta;
-  const muestra=data.registros.slice(0,8).map(r=>`<tr><td>${esc(r.folio)}</td><td>${esc(normArea(r.area))}</td><td>${esc((r.equipo||'').slice(0,40))}</td><td>${esc(r.statusRaw)}</td><td>${esc(PM_STATUS_LABEL[r.estado]||r.estado)}</td></tr>`).join('');
+  const planesPorAdfIdx={};
+  data.planes.forEach(p=>{ if(p.adf){ (planesPorAdfIdx[p.adf]=planesPorAdfIdx[p.adf]||[]).push(p); } });
+  const muestra=data.registros.slice(0,10).map(r=>{
+    const n=parseInt(String(r.spId).replace(/\D/g,''),10);
+    const nP=(planesPorAdfIdx[n]||[]).length;
+    return `<tr><td>${esc(r.folio)}</td><td>${esc(normArea(r.area))}</td><td>${esc((r.equipo||'').slice(0,38))}</td><td>${esc(PM_STATUS_LABEL[r.estado]||r.estado)}</td><td style="text-align:center">${nP?`<b class="c-verde">${nP}</b>`:'<span class="muted">—</span>'}</td></tr>`;
+  }).join('');
+  const alertaPlanes = m.nPlanes===0
+    ? `<div class="alerta-recurrencia" style="margin-bottom:10px">⚠ No se detectaron planes de acción. Si tienes el Excel de planes, súbelo en el campo opcional.<br><b>Si los planes están en columnas del mismo Excel</b> (ej: columna "Plan de Acción"), revisa que el encabezado contenga las palabras "plan" o "accion".</div>`
+    : `<div style="color:var(--green);font-size:.85rem;margin-bottom:8px">✅ ${m.nPlanes} plan(es) detectado(s) en ${m.adfConPlanes} de ${m.nADF} ADF</div>`;
   window._pmData=data;
   $('modal-title').textContent='👁 Previsualización — Exportación SharePoint';
   $('modal-body').innerHTML=`
@@ -2262,11 +2314,12 @@ function mostrarPreviewPM(data){
         <span class="c-verde"><b>${m.generados}</b> Generados</span>
         <span class="c-ambar"><b>${m.enProceso}</b> En proceso</span>
         <span class="c-rojo"><b>${m.pendientes}</b> Pendientes</span>
-        <span><b>${m.nPlanes}</b> planes</span>
+        <span><b>${m.nPlanes}</b> planes en <b>${m.adfConPlanes}</b> ADF</span>
       </div>
-      <table class="data sp-tbl"><thead><tr><th>Folio</th><th>Área</th><th>Equipo</th><th>Status</th><th>→ Estado portal</th></tr></thead>
+      ${alertaPlanes}
+      <table class="data sp-tbl"><thead><tr><th>Folio</th><th>Área</th><th>Equipo</th><th>→ Estado portal</th><th>Planes</th></tr></thead>
         <tbody>${muestra}</tbody></table>
-      <p class="muted">Muestra de ${Math.min(8,m.nADF)} de ${m.nADF}. Al sembrar se actualiza cabecera + planes y se <b>preserva el flujo</b> (verificación/jefatura) de los ADF que ya existan.</p>
+      <p class="muted">Muestra de ${Math.min(10,m.nADF)} de ${m.nADF}. Al sembrar se actualiza cabecera + planes y se <b>avanza el estado</b> si el import es más reciente.</p>
       <div class="sp-actions">
         <button class="btn-secondary" id="pm-cancel2">Cancelar</button>
         <button class="btn-primary" id="pm-sembrar">Sembrar ${m.nADF} ADF + ${m.nPlanes} planes</button>

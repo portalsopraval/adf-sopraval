@@ -3937,6 +3937,7 @@ function escucharPlanesMP(){
 }
 
 function renderMantenimiento(){
+  if(esVistaPMInd()) { renderMantenimientoPM(); return; }
   const planes = _cache.planes;
   const kAct  = planes.filter(p=>p.estado==='Activo').length;
   const kPend = planes.filter(p=>p.estado==='Pendiente').length;
@@ -3956,6 +3957,78 @@ function renderMantenimiento(){
     ${planes.length ? tablaPlanesMP(planes)
       : `<div class="empty"><div class="e-icon">🔧</div>No hay planes PM aún.<br><small>Crea el primero a partir de un ADF analizado.</small></div>`}
   `;
+}
+
+// ── Vista de sugerencias PM para Freddy (esVistaPMInd) ──
+function renderMantenimientoPM(){
+  const adfsGen = misADFs(); // ya filtrado a ESTADOS_GENERADO
+  // Para cada ADF generado, obtener si ya tiene plan PM creado
+  const planPorAdf = {};
+  _cache.planes.forEach(pl=>{ if(pl.adfId) planPorAdf[pl.adfId]=pl; });
+
+  const sinPlan = adfsGen.filter(a=>!planPorAdf[a.id]);
+  const conPlan = adfsGen.filter(a=> planPorAdf[a.id]);
+
+  // Construir sugerencias por ADF: planes PERMANENTE del analisis + fallback genérico
+  function sugerencias(a){
+    const perm = (a.analisis?.planes||[]).filter(p=>p.tipo==='PERMANENTE');
+    if(perm.length) return perm.map(p=>`<li>${esc(p.actividad)}</li>`).join('');
+    // fallback basado en modo de falla
+    const mf = (a.modoFalla||a.sintoma||'').toLowerCase();
+    const items = [];
+    if(/lubric|desgast|rodami|cojin/.test(mf)) items.push('Programa de relubricación periódica','Inspección de rodamientos y acoplamientos');
+    if(/sello|fuga|hermet/.test(mf)) items.push('Reemplazo programado de sellos mecánicos','Verificación de torque y ajuste de bridas');
+    if(/electr|motor|corrient|bobina/.test(mf)) items.push('Medición de aislamiento eléctrico (megger)','Termografía de tableros y conexiones');
+    if(/filtro|suciedad|contamina/.test(mf)) items.push('Limpieza y reemplazo periódico de filtros','Análisis de aceite / lubricante');
+    if(/vibrac|desaline|balanc/.test(mf)) items.push('Análisis de vibración periódico','Alineación y balanceo programado');
+    if(!items.length) items.push('Incorporar equipo a rutina de mantenimiento preventivo','Definir frecuencia de inspección y responsable');
+    return items.map(x=>`<li>${esc(x)}</li>`).join('');
+  }
+
+  const cardsSin = sinPlan.length ? sinPlan.map(a=>`
+    <div class="pm-card pm-card-pend">
+      <div class="pm-card-head">
+        <span class="pm-folio">${esc(a.folio||'—')}</span>
+        <span class="pm-area">${esc(normArea(a.area)||'—')}</span>
+        <span class="badge b-analisis" style="margin-left:auto">Sin plan PM</span>
+      </div>
+      <div class="pm-card-eq">${esc(a.equipo||'—')}</div>
+      ${a.modoFalla?`<div class="pm-card-modo">Modo: ${esc(a.modoFalla)}</div>`:''}
+      <div class="pm-card-sug">
+        <b>💡 Sugerencias de actividades PM:</b>
+        <ul class="pm-sug-list">${sugerencias(a)}</ul>
+      </div>
+      <div class="pm-card-foot">
+        <button class="btn-primary btn-sm" onclick="abrirNuevoPlanDesde('${a.id}')">➕ Crear Plan PM</button>
+      </div>
+    </div>`).join('')
+    : `<div class="empty" style="padding:18px"><div class="e-icon">✅</div>Todos los ADF generados tienen plan PM asignado.</div>`;
+
+  const cardsConHTML = conPlan.length ? `
+    <div class="section-head" style="margin-top:22px"><h3>✅ Con plan PM (${conPlan.length})</h3></div>
+    ${tablaPlanesMP(conPlan.map(a=>planPorAdf[a.id]))}` : '';
+
+  $('pane-mantenimiento').innerHTML = `
+    <div class="page-title">🔧 Planes PM — ADF Generados</div>
+    <div class="page-sub">Sugerencias de mantenimiento preventivo derivadas del análisis de falla</div>
+    <div class="kpi-grid">
+      <div class="kpi accent"><div class="k-val">${adfsGen.length}</div><div class="k-lbl">ADF generados</div></div>
+      <div class="kpi"><div class="k-val c-rojo">${sinPlan.length}</div><div class="k-lbl">Sin plan PM</div></div>
+      <div class="kpi"><div class="k-val c-verde">${conPlan.length}</div><div class="k-lbl">Con plan PM</div></div>
+    </div>
+    ${sinPlan.length ? `<div class="section-head"><h3>⚠ Requieren plan PM (${sinPlan.length})</h3></div>` : ''}
+    <div class="pm-cards">${cardsSin}</div>
+    ${cardsConHTML}
+  `;
+}
+
+function abrirNuevoPlanDesde(adfId){
+  _openPlanId = '__nuevo__';
+  $('modal-title').textContent = '➕ Nuevo Plan de Mantenimiento Preventivo';
+  $('modal-body').innerHTML = formPlanMP(null);
+  $('modal-detalle').classList.add('open');
+  const sel = $('mp-adf-sel');
+  if(sel){ sel.value = adfId; autoFillPlan(adfId); }
 }
 
 function tablaPlanesMP(list){
